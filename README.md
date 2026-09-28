@@ -183,7 +183,7 @@ creator (Portrait/Body/Lineup views, the 11 motions, height, underclothes) and 1
 
 ## Animations (our own, shippable)
 
-`src/hum_anim.py` authors 13 clips procedurally on the deform rig: a pose is world-space rotation deltas per
+`src/hum_anim.py` authors 23 clips procedurally on the deform rig: a pose is world-space rotation deltas per
 bone + a pelvis offset, legs/arms solved with two-bone IK and pole vectors, keyed as local quaternions
 (rotations + pelvis location only, so a clip is build-independent and retargets as Humanoid). 30 fps, in place.
 
@@ -195,6 +195,9 @@ bone + a pelvis offset, legs/arms solved with two-bone IK and pole vectors, keye
 | Chop / Hammer | 48 / 30 | yes | two-handed overhead chop; one-handed hammer onto an anvil at waist height |
 | Sit_Down / Sit_Idle / Stand_Up | 36 / 120 / 36 | idle only | seat height 0.46 m |
 | Death | 54 | no | falls back, held |
+| Sword_Idle / Sword_Slash / Sword_Overhead / Shield_Block | 60 / 27 / 33 / 27 | yes | **WIP** one-handed sword + round shield (below) |
+| TwoHand_Idle / TwoHand_Swing / TwoHand_Overhead | 60 / 39 / 42 | yes | **WIP** two-handed sword |
+| Spear_Idle / Spear_Thrust / Spear_Jab | 60 / 30 / 21 | yes | **WIP** spear, both hands, underhand at the hip |
 
 `hum_anim.build_clips()` + `export_clips()` write `export/Anims/Human@<clip>.fbx` (armature + a sibling empty:
 with a lone armature Unity collapses `HumanRig` into the file root and the copied avatar no longer matches) and
@@ -203,7 +206,9 @@ and root locks from the JSON, and builds one shared `Animation/Humans_Motion.con
 
 Int `Motion`: 0 Idle, 1 Walk, 2 Run, 3 Chop, 4 Hammer, 5 Sit (Sit_Down -> Sit_Idle; leaving 5 plays Stand_Up),
 6 Death (held until 0), 7 Turn_L90, 8 Turn_R90 (play once and hold until Motion changes), 9 Idle_Look,
-10 Idle_Shift. The prefab's Animator has root motion on: the in-place clips don't move it, the turns rotate it
+10 Idle_Shift; combat 11 Sword_Idle, 12 Sword_Slash, 13 Sword_Overhead, 14 Shield_Block, 15 TwoHand_Idle,
+16 TwoHand_Swing, 17 TwoHand_Overhead, 18 Spear_Idle, 19 Spear_Thrust, 20 Spear_Jab (all free: any reaches any).
+The prefab's Animator has root motion on: the in-place clips don't move it, the turns rotate it
 ~87 deg (the 0.2 s blend in eats a few); a game that steers rotation itself turns root motion off.
 
 **Helper bones** (`src/hum_helpers.py`, Unity `HumanHelperBones`): six extra deform bones the clips never key,
@@ -258,6 +263,46 @@ is rolled `AXE_ROLL` (-42 in Blender = +42 in Unity, the import mirrors an axis)
 (showcase only). The hammer uses the same grip solver one-handed (`hands=(("r", 0.0),)`), its handle angles
 (`HAMMER_PSI`) searched for the least wrist strain, and the elbow angle keyed and splined (`HAMMER_ELBOW`) so the
 solver can't hop between two equally good elbows mid-swing; `HAMMER_ROLL` = -12 (Unity +12).
+
+**Combat - work in progress, not production quality.** Daniel's review: the swings are too small (amplitude),
+and the blade doesn't travel edge-first along the cut (the edge's facing was never keyed - the key search
+moved blades for wrist comfort, not for the line of the cut). He has stopped authoring our own animations
+for now (bought Humanoid clips instead, see "Trying other clip packs"); the clips, states and stand-in props
+stay as a starting point. What's there (bow clips come from the Goblins project): a fighting stance (`_fight_stance`: left foot forward,
+right back and turned out, hips and chest turned `yaw`, head counter-turned to the front) and the weapon keyed
+in arc form round a shoulder pivot (`_weapon`: "H" horizontal arcs for slashes, "V" vertical for overheads,
+"C" plain offsets for the spear), each key carrying the body's yaw / pitch / weight shift / knee bend / lunge.
+`_combat` puts the fists on the handle with the grip solver (one hand for the sword, `GREAT_HANDS` 17 cm apart,
+`SPEAR_HANDS` 32 cm) and splines the shield arm (`_shield_arm`: forearm through the straps, its back turned to
+face `SHIELD_GUARD / OPEN / TUCK / UP`, the shield swung out of the way of a cross-body slash). The wrists are
+held to what's *comfortable*, not just to Humanoid's limits (Daniel: "wrists are not supposed to bend that
+much"), so Unity shows what Blender does and the grips look natural:
+- `wrist_comfort` scores a grip: flex ~30, deviation ~30 toward the little finger / ~15 toward the thumb, and
+  twist measured from the rest pose's palm-down (a thumb-up handshake grip is +90 supination - which is also
+  Humanoid's twist limit, so twist is cheap up to there and the wrist bend is what costs);
+- the hand's forearm twist is searched within +-90 for the best comfort (`_hold(..., cap)`) instead of lining
+  the thumb up in full, and each key's elbow and twist are splined between keys as hints (a blade along the
+  forearm has two mirror answers and hopped between them frame to frame); a key keeps the previous key's elbow
+  when that costs little more, and may carry its elbows as a 4th item (the slash's elbow turns over through
+  the swing instead of in one frame at the hit);
+- the blade's angle to the forearm is set by wrist deviation alone, so a blade can't run out along the arm:
+  every strained key's blade direction and fist position were searched for the nearest comfortable hold
+  (`tools/combat_qa/key_search.py`), and swings have mid keys with the blade trailing the fist.
+Checked in Unity by sampling every frame on the prefab: the left fist stays within 0.3 cm of the handle line in
+all two-handed and spear clips (no clamping). Stand-in props (HumanSetup `BuildHelperSword / Greatsword / Spear /
+Shield`, Blender `weapons_helper.py`): sword, greatsword and spear on `Socket_R`; the shield on `Socket_Shield`,
+55% down the left forearm and 6 cm out over its back, +Y its face, parented to the left *hand* (the clips keep
+that wrist straight, and Humanoid gives the forearm bone only part of the forearm twist, so a shield on it turns
+half as far). `HumanToolPreview` takes comma-separated states, so one prop shows through a weapon's whole set.
+
+**Trying other clip packs.** A `HumanClipLibrary` (Tools > Humans > Build Clip Library From Folder, with a folder of
+Humanoid clips selected) holds per-sex controllers with one state per clip, named "[folder] clip" (the pack's
+"HumanM@" / "HumanF@" prefixes dropped, male/female split by path or prefix). HumanSetup gives the showcase's creator
+every library in the project: a "Clips" row picks one, a filter + list plays any clip on the creator and the
+lineup (root motion off, so walks stay in place); a Motion button goes back to ours. HumanFace keeps the library
+through re-applies (`clipLibrary`). MedievalSetting has "Kevin Iglesias" (287 clips, from
+`Assets/Kevin Iglesias/Human Animations/Animations`), for comparing and for checking the helper bones on
+someone else's motion - those clips can't ship with the pack.
 
 ## Clothing (villager set)
 

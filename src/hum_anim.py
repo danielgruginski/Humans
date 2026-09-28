@@ -7,6 +7,14 @@ Clips (30 fps; `CLIPS` has lengths, loops and Unity root settings):
     Chop, Hammer                      work loops (axe two-handed at a log, hammer at an anvil; tool in the right hand)
     Sit_Down, Sit_Idle, Stand_Up      onto / on / off a 46 cm seat
     Death                             falls backward, ends lying (hold the last frame)
+    Sword_Idle, Sword_Slash, Sword_Overhead, Shield_Block
+                                      one-handed sword (right) and a round shield on the left forearm
+    TwoHand_Idle, TwoHand_Swing, TwoHand_Overhead
+                                      two-handed sword (left fist at the pommel, right at the guard)
+    Spear_Idle, Spear_Thrust, Spear_Jab
+                                      spear in both hands (right at the back, left up the shaft)
+                                      Combat clips loop from and back to their stance (previews); a game plays an
+                                      attack once and returns to the stance.
 
 Method. A pose is a world-space rotation per bone relative to its rest orientation (armature space) plus the
 pelvis' offset. Positions follow by forward kinematics from the rest offsets; legs (and hands holding tools)
@@ -48,6 +56,10 @@ CLIPS = {
     "Chop": (48, True, True), "Hammer": (30, True, True),
     "Sit_Down": (36, False, True), "Sit_Idle": (120, True, True), "Stand_Up": (36, False, True),
     "Death": (54, False, True),
+    "Sword_Idle": (60, True, True), "Sword_Slash": (27, True, True), "Sword_Overhead": (33, True, True),
+    "Shield_Block": (27, True, True),
+    "TwoHand_Idle": (60, True, True), "TwoHand_Swing": (39, True, True), "TwoHand_Overhead": (42, True, True),
+    "Spear_Idle": (60, True, True), "Spear_Thrust": (30, True, True), "Spear_Jab": (21, True, True),
 }
 SPEED = {"Walk": 1.35, "Run": 3.6}
 
@@ -504,14 +516,30 @@ AXE_ROLL = -42.0          # the axe blade, degrees round the handle (grip axis) 
                           # fitted so the blade leads within 20 degrees all down the swing (socket roll)
 
 
-def _hold(rig, p, s, dirv, strike=None):
+def _hold(rig, p, s, dirv, strike=None, cap=False):
     """The hand's rotation that lays its grip axis along dirv: first a forearm twist (pronation/supination)
     lining the thumb side up with dirv round the forearm, then a wrist bend for the rest. (The least rotation
-    from the forearm straight away flips when the handle points back past the head - the axe cocked.)"""
+    from the forearm straight away flips when the handle points back past the head - the axe cocked.)
+    `cap`: the twist is searched within Humanoid's +-90 for the least strain instead - lining the thumb side
+    up in full asks for up to 180 degrees, and when the handle runs along the forearm (a thrust, a cut's
+    follow-through) that line-up is undefined and flips from frame to frame. A number for `cap` is a twist
+    hint (degrees): with the handle along the forearm the search has two mirror answers (+-75 or so), and
+    without a hint it hopped between them from one frame to the next."""
     if strike is not None:                    # the whole grip frame: handle along dirv, knuckles toward strike
         return frame(dirv, strike) @ frame(rig.grip_axis[s], rig.strike_axis[s]).inverted()
     fore = p.D[f"lowerarm_{s}"]
     axis = (fore @ rig.dir(f"hand_{s}")).normalized()
+    if cap:
+        def turned(deg):
+            q = Quaternion(axis, math.radians(deg)) @ fore
+            h = (q @ rig.grip_axis[s]).rotation_difference(dirv) @ q
+            tw, fl, dv = _strain(rig, s, fore.inverted() @ h)
+            near = 0.0 if cap is True else (tw - cap) ** 2
+            return wrist_comfort(s, tw, fl, dv) + near, h
+        best = min((turned(d)[0], d) for d in range(-90, 91, 10))
+        for step in (5.0, 2.5, 1.0):
+            best = min(best, *((turned(best[1] + k)[0], best[1] + k) for k in (-step, step)))
+        return turned(best[1])[1]
     ga = fore @ rig.grip_axis[s]
     a = ga - axis * axis.dot(ga)
     b = dirv - axis * axis.dot(dirv)
@@ -528,7 +556,26 @@ def wrist_strain(rig, p, s):
     supination (Humanoid "Forearm Twist", +-90 by default); flex bends the wrist toward the palm or back
     ("Hand Down-Up", +-80); deviation tips it toward the thumb or little finger ("Hand In-Out", only +-40 -
     past it Unity clamps the wrist and a two-handed grip comes apart)."""
-    rel = p.D[f"lowerarm_{s}"].inverted() @ p.D[f"hand_{s}"]
+    return _strain(rig, s, p.D[f"lowerarm_{s}"].inverted() @ p.D[f"hand_{s}"])
+
+
+def wrist_comfort(s, tw, fl, dv):
+    """Cost of a wrist held (twist, flex, deviation) for a while - the combat grips. Each term is ~1000 at what a
+    wrist holds comfortably (flex 30, deviation 30 toward the little finger / 15 toward the thumb, pronation 25
+    past the rest pose), rising steeply past Humanoid's limits. The rest pose has the palms down, so a handshake
+    grip (thumb up) is already +90 supination - Humanoid's twist limit: twist is cheap from palm-down to thumb-up
+    and the wrist bend is what costs. (Daniel: "wrists are not supposed to bend that much" - the first combat
+    pass only kept the limits, flex was half the price of twist and every sword hand sat bent 40-70 deg.)"""
+    uln = -dv if s == "r" else dv                                 # toward the little finger
+    dev = uln / 30.0 if uln > 0 else -uln / 15.0
+    sup = tw if s == "r" else -tw                                 # supination (palm-down rest -> thumb up at 90)
+    turn = ((sup - 45.0) / 90.0) ** 2 + (max(0.0, -sup) / 25.0) ** 2
+    over = max(0.0, abs(tw) - 85.0) ** 2 + max(0.0, abs(fl) - 75.0) ** 2 + max(0.0, abs(dv) - 36.0) ** 2
+    return 1000.0 * (turn + (fl / 30.0) ** 2 + dev * dev) + 50.0 * over
+
+
+def _strain(rig, s, rel):
+    """wrist_strain of a hand turned `rel` against its forearm."""
     ax = rig.dir(f"hand_{s}")
     v = Vector((rel.x, rel.y, rel.z))
     along = v.dot(ax)
@@ -553,7 +600,8 @@ def _over_head(rig, p, s):
     return max(0.0, math.degrees(d.angle(-UP)) - ARM_RAISE)
 
 
-def _handle_hands(rig, p, grip, dirv, pivot=None, strike=None, hands=(("l", 0.0), ("r", HANDLE_GAP)), elbow=None):
+def _handle_hands(rig, p, grip, dirv, pivot=None, strike=None, hands=(("l", 0.0), ("r", HANDLE_GAP)), elbow=None,
+                  cap=False, twist=None):
     """Fists round one handle: by default the left at `grip`, the right HANDLE_GAP up it (dirv, toward the head;
     `hands` = (side, distance up the handle) pairs - one pair for a one-handed tool),
     knuckles toward `strike` (the tool's face; else the least turn from the forearm). The fist centre, not the
@@ -568,13 +616,14 @@ def _handle_hands(rig, p, grip, dirv, pivot=None, strike=None, hands=(("l", 0.0)
     reach = rig.arm_len * 0.985
 
     def place(s, pos, pole, clav):
+        c = cap if not (cap and twist) else twist[s]                   # (capped twist, hinted per side)
         wrist = pos.copy()
         for _ in range(12):                                            # wrist target <-> hand turn (damped:
             p.arm_ik(s, wrist, pole, clav=clav)                        # overhead the forearm swings a lot
-            q = _hold(rig, p, s, dirv, strike)                         # for a small wrist move)
+            q = _hold(rig, p, s, dirv, strike, c)                      # for a small wrist move)
             wrist = wrist.lerp(pos - q @ rig.fist[s], 0.6)
         p.arm_ik(s, wrist, pole, clav=clav)
-        p.D[f"hand_{s}"] = _hold(rig, p, s, dirv, strike)
+        p.D[f"hand_{s}"] = _hold(rig, p, s, dirv, strike, c)
         return wrist
 
     def solve(g):
@@ -592,7 +641,8 @@ def _handle_hands(rig, p, grip, dirv, pivot=None, strike=None, hands=(("l", 0.0)
                 place(s, pos, pole, clav)
                 tw, fl, dv = wrist_strain(rig, p, s)
                 miss = (p.pos(f"hand_{s}") + p.D[f"hand_{s}"] @ rig.fist[s] - pos).length   # fist off the handle
-                cost = (tw * tw + 0.5 * fl * fl + 2.0 * dv * dv + (0.25 if hint is None else 4.0) * (a - (hint or 0.0)) ** 2
+                cost = ((wrist_comfort(s, tw, fl, dv) if cap else tw * tw + 0.5 * fl * fl + 2.0 * dv * dv)
+                        + (0.25 if hint is None else 4.0) * (a - (hint or 0.0)) ** 2
                         + 3.0 * _over_head(rig, p, s) ** 2 + 1e6 * miss * miss)
                 if best is None or cost < best[0]:
                     best = (cost, a)
@@ -601,7 +651,8 @@ def _handle_hands(rig, p, grip, dirv, pivot=None, strike=None, hands=(("l", 0.0)
                 place(s, pos, pole, clav)
                 tw, fl, dv = wrist_strain(rig, p, s)
                 miss = (p.pos(f"hand_{s}") + p.D[f"hand_{s}"] @ rig.fist[s] - pos).length   # fist off the handle
-                cost = (tw * tw + 0.5 * fl * fl + 2.0 * dv * dv + (0.25 if hint is None else 4.0) * (a - (hint or 0.0)) ** 2
+                cost = ((wrist_comfort(s, tw, fl, dv) if cap else tw * tw + 0.5 * fl * fl + 2.0 * dv * dv)
+                        + (0.25 if hint is None else 4.0) * (a - (hint or 0.0)) ** 2
                         + 3.0 * _over_head(rig, p, s) ** 2 + 1e6 * miss * miss)
                 if cost < best[0]:
                     best = (cost, a)
@@ -800,11 +851,287 @@ def clip_death(rig, t):
     return p
 
 
+# ------------------------------------------------------------------------------------------ combat
+# WORK IN PROGRESS, not production quality (Daniel's review, 2026-09-28): the swings are too small and the blade
+# doesn't travel edge-first along the cut. Kept as a starting point; see HANDOFF "Open / next".
+# Keys are arcs, like the chop's (a straight line between two grips cut the corner past the face and slowed the
+# swing mid-arc): "V" (x, r, theta, dx, psi) round the pivot in the vertical plane - theta from straight up
+# toward the front, the weapon at psi the same way, tipped dx to the left; "H" (r, phi, h, az, el) round the
+# vertical axis through the pivot - phi 0 straight ahead, + to the character's left, h up, the weapon at azimuth
+# az (0 ahead, + left) and elevation el; "C" (x, y, z, az, el) straight (thrusts). Each key then carries the
+# body: hips' yaw (negative: turned right, the left side leading), forward pitch, weight shift (m, forward),
+# knee bend (m) and lunge (the front foot out, m).
+SWORD_HANDS = (("r", 0.0),)
+GREAT_HANDS = (("l", 0.0), ("r", 0.17))    # the left fist at the pommel, the right at the guard
+SPEAR_HANDS = (("r", 0.0), ("l", 0.32))    # the right fist at the back, the left up the shaft toward the head
+# the shield: on the left forearm (strapped), its face where the back of the forearm faces
+SHIELD_GUARD = ((-0.10, -0.26, -0.06), (-10.0, 5.0))    # hand off the left shoulder; face azimuth, elevation
+SHIELD_TUCK = ((-0.06, -0.20, -0.10), (-20.0, 0.0))
+SHIELD_UP = ((-0.12, -0.28, 0.14), (-5.0, 18.0))
+SHIELD_OPEN = ((0.20, -0.02, -0.12), (80.0, 0.0))       # swung out to the left: a slash across the front clears it
+
+
+def _weapon(v, form):
+    """(offset from the pivot, weapon direction) from a key vector in its arc form."""
+    if form == "V":
+        x, r, th, dx, psi = v[:5]
+        th, psi = math.radians(th), math.radians(psi)
+        return Vector((x, -r * math.sin(th), r * math.cos(th))), Vector((dx, -math.sin(psi), math.cos(psi))).normalized()
+    if form == "H":
+        r, phi, h, az, el = v[:5]
+    else:
+        x, y, h, az, el = v[:5]
+    az, el = math.radians(az), math.radians(el)
+    d = Vector((math.cos(el) * math.sin(az), -math.cos(el) * math.cos(az), math.sin(el)))
+    if form == "H":
+        phi = math.radians(phi)
+        return Vector((r * math.sin(phi), -r * math.cos(phi), h)), d
+    return Vector((x, y, h)), d
+
+
+def _fight_stance(rig, t, yaw=-18.0, pitch=4.0, shift=0.0, bend=0.06, lunge=0.0, breathe=0.6):
+    """A fighting stance, in place: the left foot forward, the right back and turned out, knees bent; the hips
+    turned `yaw` (the chest turns on with them, the head back to the front), leaning `pitch`, the weight
+    `shift` forward; `lunge` slides the front foot out."""
+    p = Pose(rig)
+    b = math.sin(2 * math.pi * t) * breathe
+    p.pelvis = Vector((0.0, -shift, -bend + 0.003 * b))
+    p.torso(pelvis=eul(yaw=yaw * 0.6, pitch=pitch * 0.3),
+            spine=(eul(yaw=yaw * 0.15, pitch=pitch * 0.25), eul(yaw=yaw * 0.15, pitch=pitch * 0.25 + 0.5 * b),
+                   eul(yaw=yaw * 0.1, pitch=pitch * 0.2 - 0.8 * b)),
+            neck=eul(pitch=-pitch * 0.35, yaw=-yaw * 0.4), head=eul(pitch=-pitch * 0.3, yaw=-yaw * 0.45))
+    for s, sx, fy, fyaw in (("l", 1, -0.15 - lunge, -10.0), ("r", -1, 0.17, -40.0)):
+        a = _rest_ankle(rig, s)
+        kd = (eul(yaw=fyaw) @ FWD + LEFT * sx * 0.25).normalized()
+        p.leg(s, Vector((sx * 0.13, a.y + fy, a.z)), knee_dir=kd, foot=eul(yaw=fyaw))
+    return p
+
+
+def _shield_arm(rig, p, off, face):
+    """The left forearm through the shield's straps: the hand `off` the left shoulder, the forearm twisted so
+    its back (the shield's face) looks along azimuth/elevation `face`; the hand closed on the strap."""
+    target = p.pos("upperarm_l") + Vector(off)
+    p.arm_ik("l", target, Vector((0.9, 0.25, -0.5)))
+    az, el = math.radians(face[0]), math.radians(face[1])
+    want = Vector((math.cos(el) * math.sin(az), -math.cos(el) * math.cos(az), math.sin(el)))
+    axis = (p.pos("hand_l") - p.pos("lowerarm_l")).normalized()
+    cur = p.D["lowerarm_l"] @ rig.dorsal["l"]
+    a = cur - axis * axis.dot(cur)
+    b = want - axis * axis.dot(want)
+    if a.length > 1e-4 and b.length > 1e-4:
+        a, b = a.normalized(), b.normalized()
+        tw = math.atan2(axis.dot(a.cross(b)), a.dot(b))
+        p.D["lowerarm_l"] = Quaternion(axis, tw) @ p.D["lowerarm_l"]
+    p.D["hand_l"] = p.D["lowerarm_l"]
+    p.fingers("l", 0.85)
+
+
+_KEY_ELBOWS = {}
+
+
+def _combat(rig, t, K, form, pivot, hands, shield=None, free=False):
+    """A combat pose at t from arc keys K (see above): the stance from each key's body values, the weapon's
+    hands on its handle (the grip solver: wrists inside Humanoid's limits, the handle slid in if out of reach),
+    and the shield arm splined through `shield` = [(t, key), ...] if given. Each key's elbows are solved once
+    (cached), then splined between the keys as the solver's hint (the hammer's way): searched free on every
+    frame, an elbow hopped between two equally good answers and the forearm spun half a turn in a frame.
+    A key keeps the previous key's elbow when that costs the wrists little more than its own best (free,
+    the slash's hit took an elbow 147 deg round from the key before and flicked it over in a frame).
+    A key may carry its elbows as a 4th item ({side: degrees}) where the free answer would roll the elbow over
+    in a frame (the slash's cocked mid-swing needs it up, the hit down: keyed on the way, it turns over through
+    the swing). `free` = True solves this pose alone; a dict {side: elbow} solves it near those elbows."""
+    v = spline(K, t)
+    yaw, pitch, shift, bend, lunge = v[5:10]
+    p = _fight_stance(rig, t, yaw=yaw, pitch=pitch, shift=shift, bend=bend, lunge=lunge)
+    piv = (p.pos("upperarm_l") + p.pos("upperarm_r")) / 2 if pivot == "mid" else p.pos(f"upperarm_{pivot}")
+    off, d = _weapon(v, form)
+    hint = twist = None
+    if isinstance(free, dict):
+        hint = free
+    elif not free:                               # elbows and wrist twists solved at the keys, splined
+        sides = [s for s, _ in hands]
+        ck = repr((K, form, pivot, hands, shield))
+        if ck not in _KEY_ELBOWS:
+            def comfort(q):
+                return sum(wrist_comfort(s, *wrist_strain(rig, q, s)) for s in sides)
+            rows = []
+            prev = None
+            for i, (tk, _, kind, *_) in enumerate(K):
+                if i == len(K) - 1 and K[i][1] == K[0][1]:
+                    rows.append((tk, rows[0][1], kind))            # the loop closes on the first key's solve
+                    continue
+                if len(K[i]) > 3:
+                    q = _combat(rig, tk, K, form, pivot, hands, shield, free=dict(K[i][3]))
+                else:
+                    q = _combat(rig, tk, K, form, pivot, hands, shield, free=True)
+                if prev is not None and len(K[i]) <= 3:
+                    q2 = _combat(rig, tk, K, form, pivot, hands, shield, free=prev)
+                    if comfort(q2) <= 1.3 * comfort(q) + 400.0:
+                        q = q2
+                prev = {s: q.elbow[s] for s in sides}
+                rows.append((tk, tuple(q.elbow[s] for s in sides) + tuple(wrist_strain(rig, q, s)[0] for s in sides),
+                             kind))
+            _KEY_ELBOWS[ck] = rows
+        e = [float(x) for x in spline(_KEY_ELBOWS[ck], t)]
+        hint = dict(zip(sides, e[:len(sides)]))
+        twist = dict(zip(sides, e[len(sides):]))
+    _handle_hands(rig, p, piv + off, d, pivot=piv, hands=hands, elbow=hint, cap=True, twist=twist)
+    if shield is not None:
+        sv = spline([(k[0], (*k[1][0], *k[1][1]), k[2]) for k in shield], t)
+        _shield_arm(rig, p, sv[0:3], sv[3:5])
+    elif all(s != "l" for s, _ in hands):
+        p.arm("l", down=70, out=18, swing=10, elbow=40)
+        p.fingers("l", 0.9)
+    return p
+
+
+# Blade directions at the strike keys (all weapons) were searched for the nearest one a wrist holds inside
+# Humanoid's limits (forearm twist +-90, deviation +-40): the blade's angle to the forearm is set by deviation
+# alone, so a blade run out along the forearm line can't be held, and asking for it spun the forearm past 90.
+# one-handed sword off the right shoulder, the guard: the fist forward of the chest, the blade up and forward
+_SW_GUARD_H = (0.31, 15.0, -0.10, 8.0, 50.0)          # (both forms, the same pose; the blade ~6 cm off the shield)
+_SW_GUARD_V = (0.08, 0.316, 108.4, 0.09, 39.7)
+_SW_BODY = (-18.0, 4.0, 0.0, 0.06, 0.0)
+
+
+def clip_sword_idle(rig, t):
+    K = [(0.0, (*_SW_GUARD_H, *_SW_BODY), "flow"),
+         (0.5, (0.31, 17.0, -0.08, 10.0, 52.0, -19.0, 4.0, 0.01, 0.065, 0.0), "flow"),
+         (1.0, (*_SW_GUARD_H, *_SW_BODY), "flow")]
+    return _combat(rig, t, K, "H", "r", SWORD_HANDS, shield=[(0.0, SHIELD_GUARD, "flow"), (1.0, SHIELD_GUARD, "flow")])
+
+
+def clip_sword_slash(rig, t):
+    """Forehand slash: the blade cocked back over the right shoulder, swept across the front from right to left
+    at chest height, following through past the left hip."""
+    K = [(0.00, (*_SW_GUARD_H, *_SW_BODY), "flow"),
+         (0.15, (0.20, -50.0, 0.00, -108.0, 74.0, -30.0, 1.7, -0.018, 0.066, 0.0), "flow"),    # up over the
+                                                                                                # top (not out
+                                                                                                # along the arm)
+         (0.30, (0.12, -97.0, 0.22, -168.0, 0.0, -38.0, 0.0, -0.03, 0.07, 0.0), "stop"),
+         (0.41, (0.205, -58.0, 0.10, -151.0, 18.0, -21.0, 2.4, -0.006, 0.073, 0.015), "flow", {"r": 0.0}),    # the blade
+                                                                                                  # trailing the
+                                                                                                  # fist: swept
+                                                                                                  # round with it,
+                                                                                                  # it ran out
+                                                                                                  # along the arm
+         (0.455, (0.269, -16.5, -0.02, -100.8, 65.4, -8.1, 4.25, 0.013, 0.075, 0.027), "flow", {"r": -45.0}),
+         (0.50, (0.40, 31.0, -0.14, 80.0, 16.0, 18.0, 8.0, 0.05, 0.08, 0.05), "hit"),
+         (0.62, (0.36, 51.0, -0.20, 105.0, 2.0, 26.0, 8.0, 0.03, 0.07, 0.04), "stop"),   # (on round to the
+                                                                                        # left-back, it cut
+                                                                                        # through the shield)
+         (0.86, (*_SW_GUARD_H, *_SW_BODY), "stop"),      # back on guard before the shield closes over the front
+         (1.00, (*_SW_GUARD_H, *_SW_BODY), "flow")]
+    sh = [(0.0, SHIELD_GUARD, "flow"), (0.32, SHIELD_OPEN, "stop"), (0.80, SHIELD_OPEN, "stop"), (1.0, SHIELD_GUARD, "flow")]
+    return _combat(rig, t, K, "H", "r", SWORD_HANDS, shield=sh)
+
+
+def clip_sword_overhead(rig, t):
+    """Overhead cut: the fist up by the right side of the head, the blade dropped behind, then down the front."""
+    K = [(0.00, (*_SW_GUARD_V, *_SW_BODY), "flow"),
+         (0.18, (-0.04, 0.29, 40.0, -0.18, -56.0, -20.0, -1.0, -0.015, 0.065, 0.0), "flow"),   # tipped back
+                                                                                                 # leaning out,
+                                                                                                 # clear of the head
+         (0.36, (-0.06, 0.234, -20.0, 0.10, -130.0, -22.0, -6.0, -0.03, 0.07, 0.0), "stop"),   # out over the
+                                                                                                 # shoulder (by
+                                                                                                 # the head, the
+                                                                                                 # fist hit it)
+         (0.56, (0.12, 0.473, 108.7, -0.475, 93.0, -5.0, 14.0, 0.07, 0.09, 0.08), "hit"),
+         (0.66, (0.12, 0.470, 108.0, -0.475, 106.0, -5.0, 15.0, 0.07, 0.09, 0.08), "stop"),
+         (0.88, (*_SW_GUARD_V, *_SW_BODY), "stop"),
+         (1.00, (*_SW_GUARD_V, *_SW_BODY), "flow")]
+    sh = [(0.0, SHIELD_GUARD, "flow"), (0.5, SHIELD_TUCK, "flow"), (0.80, SHIELD_TUCK, "stop"), (1.0, SHIELD_GUARD, "flow")]
+    return _combat(rig, t, K, "V", "r", SWORD_HANDS, shield=sh)
+
+
+def clip_shield_block(rig, t):
+    """The shield up to the face and braced, the sword drawn back; then down again."""
+    K = [(0.00, (*_SW_GUARD_H, *_SW_BODY), "flow"),
+         (0.30, (0.24, -20.0, -0.06, 10.0, 64.0, -24.0, 8.0, -0.02, 0.09, 0.0), "stop"),
+         (0.70, (0.24, -20.0, -0.06, 10.0, 64.0, -24.0, 8.0, -0.02, 0.09, 0.0), "stop"),
+         (1.00, (*_SW_GUARD_H, *_SW_BODY), "flow")]
+    sh = [(0.0, SHIELD_GUARD, "flow"), (0.25, SHIELD_UP, "stop"), (0.72, SHIELD_UP, "stop"), (1.0, SHIELD_GUARD, "flow")]
+    return _combat(rig, t, K, "H", "r", SWORD_HANDS, shield=sh)
+
+
+# two-handed sword off the shoulders' midpoint (the left fist, at the pommel)
+_GS_GUARD_H = (0.262, -6.6, -0.20, -5.0, 55.0)
+_GS_GUARD_V = (-0.03, 0.328, 127.6, -0.05, 35.0)
+_GS_BODY = (-20.0, 4.0, 0.0, 0.07, 0.0)
+
+
+def clip_twohand_idle(rig, t):
+    K = [(0.0, (*_GS_GUARD_V, *_GS_BODY), "flow"),
+         (0.5, (-0.03, 0.330, 126.0, -0.05, 37.0, -21.0, 4.0, 0.01, 0.075, 0.0), "flow"),
+         (1.0, (*_GS_GUARD_V, *_GS_BODY), "flow")]
+    return _combat(rig, t, K, "V", "mid", GREAT_HANDS)
+
+
+def clip_twohand_swing(rig, t):
+    """Wide horizontal swing: wound up over the right shoulder, the hips and chest turning through, the blade
+    level across the front, following through to the left."""
+    K = [(0.00, (*_GS_GUARD_H, *_GS_BODY), "flow"),
+         (0.34, (0.26, -84.0, -0.12, -165.0, 65.0, -40.0, 0.0, -0.03, 0.08, 0.0), "stop"),
+         (0.45, (0.291, -52.0, -0.05, -148.0, 62.0, -22.0, 2.4, -0.006, 0.083, 0.018), "flow"),   # trailing
+         (0.50, (0.318, -26.9, -0.157, -66.7, 56.6, -6.1, 4.5, 0.015, 0.086, 0.034), "flow"),
+         (0.54, (0.363, 8.0, -0.08, 88.0, 25.0, 20.0, 8.0, 0.05, 0.09, 0.06), "hit"),
+         (0.68, (0.316, 55.0, -0.14, 151.0, 1.0, 38.0, 8.0, 0.03, 0.08, 0.05), "stop"),
+         (1.00, (*_GS_GUARD_H, *_GS_BODY), "flow")]
+    return _combat(rig, t, K, "H", "mid", GREAT_HANDS)
+
+
+def clip_twohand_overhead(rig, t):
+    """Heavy overhead: the hands up to the crown with the blade hanging behind, then down through the front."""
+    K = [(0.00, (*_GS_GUARD_V, *_GS_BODY), "flow"),
+         (0.38, (-0.02, 0.44, 12.0, -0.12, -108.0, -10.0, -8.0, -0.02, 0.07, 0.0), "stop"),
+         (0.58, (-0.01, 0.44, 130.0, 0.105, 64.0, 0.0, 20.0, 0.06, 0.11, 0.08), "hit"),     # cut through to
+         (0.70, (-0.01, 0.44, 134.0, 0.28, 74.0, 0.0, 22.0, 0.06, 0.11, 0.08), "stop"),    # level, across
+                                                                                            # to the left
+         (1.00, (*_GS_GUARD_V, *_GS_BODY), "flow")]
+    return _combat(rig, t, K, "V", "mid", GREAT_HANDS)
+
+
+# spear off the right shoulder (the rear fist), level at the waist, the head at an opponent's chest
+_SP_GUARD = (-0.03, -0.20, -0.30, 8.0, 10.0)      # the fist out by the right hip: the shaft clears the belly in
+                                                  # front and the butt passes outside the hip (4-5 cm)
+_SP_BODY = (-40.0, 5.0, 0.0, 0.07, 0.0)
+
+
+def clip_spear_idle(rig, t):
+    K = [(0.0, (*_SP_GUARD, *_SP_BODY), "flow"),
+         (0.5, (-0.03, -0.21, -0.29, 8.0, 11.0, -41.0, 5.0, 0.01, 0.075, 0.0), "flow"),
+         (1.0, (*_SP_GUARD, *_SP_BODY), "flow")]
+    return _combat(rig, t, K, "C", "r", SPEAR_HANDS)
+
+
+def clip_spear_thrust(rig, t):
+    """Lunging thrust: drawn back, then driven forward along its line as the front foot steps out."""
+    K = [(0.00, (*_SP_GUARD, *_SP_BODY), "flow"),
+         (0.25, (-0.07, 0.02, -0.32, 10.0, 12.0, -48.0, 3.0, -0.03, 0.07, 0.0), "stop"),
+         (0.45, (0.01, -0.30, -0.36, 12.0, 16.0, -25.0, 14.0, 0.10, 0.10, 0.25), "hit"),
+         (0.58, (0.01, -0.30, -0.36, 12.0, 16.0, -25.0, 14.0, 0.10, 0.10, 0.25), "stop"),
+         (1.00, (*_SP_GUARD, *_SP_BODY), "flow")]
+    return _combat(rig, t, K, "C", "r", SPEAR_HANDS)
+
+
+def clip_spear_jab(rig, t):
+    """Quick jab from the guard, no step."""
+    K = [(0.00, (*_SP_GUARD, *_SP_BODY), "flow"),
+         (0.30, (-0.01, -0.29, -0.32, 13.0, 18.0, -33.0, 9.0, 0.07, 0.08, 0.0), "hit"),
+         (0.45, (-0.01, -0.29, -0.32, 13.0, 18.0, -33.0, 9.0, 0.07, 0.08, 0.0), "stop"),
+         (1.00, (*_SP_GUARD, *_SP_BODY), "flow")]
+    return _combat(rig, t, K, "C", "r", SPEAR_HANDS)
+
+
 BUILD = {
     "Idle": clip_idle, "Idle_Look": clip_idle_look, "Idle_Shift": clip_idle_shift,
     "Walk": clip_walk, "Run": clip_run, "Turn_L90": _turn(1), "Turn_R90": _turn(-1),
     "Chop": clip_chop, "Hammer": clip_hammer,
     "Sit_Down": clip_sit_down, "Sit_Idle": clip_sit_idle, "Stand_Up": clip_stand_up, "Death": clip_death,
+    "Sword_Idle": clip_sword_idle, "Sword_Slash": clip_sword_slash, "Sword_Overhead": clip_sword_overhead,
+    "Shield_Block": clip_shield_block,
+    "TwoHand_Idle": clip_twohand_idle, "TwoHand_Swing": clip_twohand_swing, "TwoHand_Overhead": clip_twohand_overhead,
+    "Spear_Idle": clip_spear_idle, "Spear_Thrust": clip_spear_thrust, "Spear_Jab": clip_spear_jab,
 }
 
 

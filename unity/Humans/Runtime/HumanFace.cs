@@ -42,6 +42,9 @@ namespace Humans
         public Matrix4x4[] restToParent = new Matrix4x4[0];   // model-space vector -> parent-local vector (rest)
         [Tooltip("Motion controllers by sex (HumanSetup builds one shared Humans_Motion controller from our own clips)")]
         public RuntimeAnimatorController maleController, femaleController;
+        /// <summary>While set (the showcase's clip browser), its controller replaces ours, so re-applying the face
+        /// doesn't put our clips back.</summary>
+        [System.NonSerialized] public HumanClipLibrary clipLibrary;
         [Tooltip("Roll a random face from `seed` when the game starts")]
         public bool randomOnStart;
         public int seed;
@@ -127,8 +130,8 @@ namespace Humans
             ApplyClothes(weights);
             if (animator != null && maleController != null && femaleController != null)
             {
-                var want = face.sex >= 0 ? maleController : femaleController;
-                if (animator.runtimeAnimatorController != want) animator.runtimeAnimatorController = want;
+                var want = clipLibrary != null ? clipLibrary.For(face.sex) : face.sex >= 0 ? maleController : femaleController;
+                if (want != null && animator.runtimeAnimatorController != want) animator.runtimeAnimatorController = want;
             }
             ApplySkeleton(bodyWeights);
         }

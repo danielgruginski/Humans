@@ -321,8 +321,35 @@ Done: head + eyes, stylisation, UVs, paint masks, preview shader, 98 keys, rando
   rest on a raised thigh, a 1.5 cm margin on thighs and lift for hems only brought the fronts down to 45-65 deg
   but let the thighs through. Daniel prefers the lift to clipping: a raised knee stands a short skirt's front
   up to ~80 deg, and that's accepted.
+- Then "we need to work on attack animations" (his picks: one-handed + shield, two-handed, spear; stand-in
+  weapons; bow already exists in the Goblins project): 10 combat clips (README "Combat"), Unity states 11-20,
+  stand-in sword / shield / greatsword / spear. Checked numerically in Blender (blade vs body and shield per
+  frame, wrist strain and frame-to-frame turns) and in Unity (fists on the handle, play-mode sheets in villager
+  clothes and every armour set). The combat clips use a capped-twist `_hold` and splined elbow/twist hints; Chop
+  and Hammer are untouched (their keys were tuned on the old hold).
+- Then "this kind of hand positioning (the right hand) is wrong, wrists are not supposed to bend that much": the
+  first pass only kept Humanoid's limits and every sword hand sat bent 40-70 deg (the raised block worst). The
+  rest pose is palm-down, so a thumb-up grip is already +90 twist (Humanoid's limit) and the solver bent the
+  wrist for the rest. Now `wrist_comfort` (bend ~30, twist cheap up to thumb-up) drives the combat solver, and
+  every strained key's blade and fist were re-searched: held poses bend <= ~25 deg, strikes ~20-30.
+  Standard for future clips: comfortable wrists, checked with tools/combat_qa/strain_check.py.
+- Then "link me back to kevin iglesias animations ... test how they look with the new bones": clip libraries
+  (README "Trying other clip packs"); "Kevin Iglesias" built in MedievalSetting and wired into the showcase.
 
 ## Open / next
+
+- **Combat clips are work in progress** (Daniel, 2026-09-28: "the quality of the animations was not good ... the
+  amplitude of the movement was wrong, and the sword swing wasn't having the blade in the direction of the cut").
+  He has let go of building our own animations: don't push this further unless he asks. To pick it up again,
+  key the swing arcs from reference (full shoulder/hip rotation, larger arcs), key the edge direction along the
+  cut (the grip frame's +Z), and only then fix wrists.
+- Combat: in the spear lunge the front skirt column rides up over the forward thigh and, from behind, reads as a
+  stiff flap out to the side (the ring's lift at its most extreme); long dresses flare wide over the split
+  stance. The slash's elbow still drops ~50 deg in the frame of the hit, and one frame there (and one in the
+  wind-up) passes Humanoid's twist / deviation limit a little: a clamped frame could show the sword a few degrees
+  off in Unity. Edge alignment of the blades is free (least strain), not keyed. No hit
+  events/curves on the clips yet (a game needs the impact time: Slash 0.50, Overhead 0.56, TwoHand 0.54 / 0.58,
+  Thrust 0.45, Jab 0.30 normalized).
 
 - Skirt ring: tuned on the Run clip by eye (stiffness 0.15, stretch 3, lift 0.5, elastic 1.35 / 1.25,
   thickness 0.05); the back hem kicks out in a pointed flap at the top of the heel kick. HumanHelperBones still

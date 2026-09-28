@@ -15,6 +15,8 @@ namespace Humans
         public Camera cam;
         public float distance = 0.75f;
         public float yaw = 20f, pitch = 4f;
+        [Tooltip("Other Humanoid clip sets to try (HumanSetup fills this with every HumanClipLibrary in the project)")]
+        public HumanClipLibrary[] libraries = System.Array.Empty<HumanClipLibrary>();
 
         enum View { Portrait, Body, Lineup }
         View view = View.Portrait;
@@ -23,6 +25,9 @@ namespace Humans
         string hairName = "brown", dyeName = "crimson";
         float toneT = 0.4f;
         int lineupSeed = 100;
+        int library = -1;                          // -1: our clips (the Motion buttons)
+        string libState, libFilter = "";
+        Vector2 libScroll;
         static readonly string[] Looks = { "natural", "sunkissed", "ombre", "streaks", "twotone" };
 
         HumanFaceConfig Cfg => target.Config;
@@ -63,6 +68,40 @@ namespace Humans
             if (lineup == null) return;
             int i = 0;
             foreach (var hf in lineup.GetComponentsInChildren<HumanFace>()) hf.Randomize(lineupSeed + i++);
+            if (library >= 0) UseLibrary(library);   // new faces may have changed sex: their library controller
+        }
+
+        IEnumerable<HumanFace> Everyone()
+        {
+            if (target != null) yield return target;
+            if (lineup != null) foreach (var hf in lineup.GetComponentsInChildren<HumanFace>()) yield return hf;
+        }
+
+        /// <summary>Everyone onto library i's controllers (-1: back to ours). Root motion goes off while a library
+        /// plays, so its walks and runs stay in place.</summary>
+        void UseLibrary(int i)
+        {
+            library = i;
+            var lib = i >= 0 ? libraries[i] : null;
+            foreach (var hf in Everyone())
+            {
+                hf.clipLibrary = lib;
+                if (hf.animator == null) continue;
+                var want = lib != null ? lib.For(hf.face.sex) : hf.face.sex >= 0 ? hf.maleController : hf.femaleController;
+                if (want != null) hf.animator.runtimeAnimatorController = want;
+                hf.animator.applyRootMotion = lib == null;
+            }
+            if (lib == null) SetMotion();
+            else PlayLibrary();
+        }
+
+        void PlayLibrary()
+        {
+            if (string.IsNullOrEmpty(libState)) return;
+            int id = Animator.StringToHash(libState);
+            foreach (var hf in Everyone())
+                if (hf.animator != null && hf.animator.runtimeAnimatorController != null && hf.animator.HasState(0, id))
+                    hf.animator.CrossFadeInFixedTime(id, 0.2f, 0);
         }
 
         void OnGUI()
@@ -91,8 +130,30 @@ namespace Humans
             for (int m = 0; m < Motions.Length; m++)
             {
                 if (m % 6 == 0) GUILayout.BeginHorizontal();          // six motion buttons per row
-                if (GUILayout.Toggle(motion == m, Motions[m], GUI.skin.button)) { if (motion != m) { motion = m; SetMotion(); } }
+                if (GUILayout.Toggle(library < 0 && motion == m, Motions[m], GUI.skin.button) && (library >= 0 || motion != m))
+                {
+                    motion = m;
+                    if (library >= 0) UseLibrary(-1); else SetMotion();
+                }
                 if (m % 6 == 5 || m == Motions.Length - 1) GUILayout.EndHorizontal();
+            }
+            if (libraries != null && libraries.Length > 0)
+            {
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("Clips", GUILayout.Width(36));
+                for (int i = 0; i < libraries.Length; i++)
+                    if (libraries[i] != null && GUILayout.Toggle(library == i, libraries[i].title, GUI.skin.button) && library != i) UseLibrary(i);
+                GUILayout.EndHorizontal();
+                if (library >= 0)
+                {
+                    libFilter = GUILayout.TextField(libFilter);
+                    string low = libFilter.ToLowerInvariant();
+                    libScroll = GUILayout.BeginScrollView(libScroll, GUILayout.Height(240));
+                    foreach (var st in libraries[library].states)
+                        if (low.Length == 0 || st.ToLowerInvariant().Contains(low))
+                            if (GUILayout.Toggle(libState == st, st, GUI.skin.button) && libState != st) { libState = st; PlayLibrary(); }
+                    GUILayout.EndScrollView();
+                }
             }
             if (view == View.Lineup && GUILayout.Button("Reroll lineup")) { lineupSeed += 10; RerollLineup(); }
             GUILayout.Label("right-drag: orbit   wheel: zoom");
@@ -361,7 +422,9 @@ namespace Humans
         static List<string> WithNone(List<string> l) { l.Insert(0, ""); return l; }
 
         // values of the animator's "Motion" int (HumanSetup.BuildControllers)
-        static readonly string[] Motions = { "Idle", "Walk", "Run", "Chop", "Hammer", "Sit", "Death", "Turn L", "Turn R", "Look", "Shift" };
+        static readonly string[] Motions = { "Idle", "Walk", "Run", "Chop", "Hammer", "Sit", "Death", "Turn L", "Turn R", "Look", "Shift",
+                                             "Sword", "Slash", "Overhead", "Block", "2H", "2H Swing", "2H Overhead",
+                                             "Spear", "Thrust", "Jab" };
         int motion;
 
         void SetMotion()

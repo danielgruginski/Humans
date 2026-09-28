@@ -239,9 +239,18 @@ namespace Humans.EditorTools
 
         /// <summary>The "Motion" int picks the state (HumanFace.Motions has the names): 0 Idle, 1 Walk, 2 Run, 3 Chop,
         /// 4 Hammer, 5 Sit (Sit_Down -> Sit_Idle; leaving 5 plays Stand_Up), 6 Death (held; 0 revives), 7 Turn_L90,
-        /// 8 Turn_R90 (play once and hold; they carry root rotation), 9 Idle_Look, 10 Idle_Shift.</summary>
+        /// 8 Turn_R90 (play once and hold; they carry root rotation), 9 Idle_Look, 10 Idle_Shift; combat (looped, in
+        /// a fighting stance): 11 Sword_Idle, 12 Sword_Slash, 13 Sword_Overhead, 14 Shield_Block (sword and shield),
+        /// 15 TwoHand_Idle, 16 TwoHand_Swing, 17 TwoHand_Overhead, 18 Spear_Idle, 19 Spear_Thrust, 20 Spear_Jab.</summary>
         public static readonly string[] MotionStates =
-            { "Idle", "Walk", "Run", "Chop", "Hammer", "Sit_Down", "Death", "Turn_L90", "Turn_R90", "Idle_Look", "Idle_Shift" };
+            { "Idle", "Walk", "Run", "Chop", "Hammer", "Sit_Down", "Death", "Turn_L90", "Turn_R90", "Idle_Look", "Idle_Shift",
+              "Sword_Idle", "Sword_Slash", "Sword_Overhead", "Shield_Block",
+              "TwoHand_Idle", "TwoHand_Swing", "TwoHand_Overhead", "Spear_Idle", "Spear_Thrust", "Spear_Jab" };
+
+        /// <summary>The combat states, per stand-in weapon (HumanToolPreview shows each set's props).</summary>
+        static readonly string[] SwordStates = { "Sword_Idle", "Sword_Slash", "Sword_Overhead", "Shield_Block" };
+        static readonly string[] TwoHandStates = { "TwoHand_Idle", "TwoHand_Swing", "TwoHand_Overhead" };
+        static readonly string[] SpearStates = { "Spear_Idle", "Spear_Thrust", "Spear_Jab" };
 
         static (AnimatorController, AnimatorController) BuildControllers()
         {
@@ -271,7 +280,8 @@ namespace Humans.EditorTools
                 return t;
             }
             // free states reach every motion directly
-            var free = new[] { "Idle", "Walk", "Run", "Chop", "Hammer", "Turn_L90", "Turn_R90", "Idle_Look", "Idle_Shift", "Stand_Up" };
+            var free = new[] { "Idle", "Walk", "Run", "Chop", "Hammer", "Turn_L90", "Turn_R90", "Idle_Look", "Idle_Shift", "Stand_Up" }
+                .Concat(SwordStates).Concat(TwoHandStates).Concat(SpearStates);
             foreach (var a in free)
                 for (int i = 0; i < MotionStates.Length; i++)
                     if (MotionStates[i] != a)
@@ -586,15 +596,22 @@ namespace Humans.EditorTools
             AddHelperBones(root, boneMap);
             AddSpringChains(root, boneMap);
             AddSkirts(root, boneMap);
-            // hand sockets from the rest skeleton, then the helper axe shown during Chop
+            // hand sockets from the rest skeleton (and the shield's on the left forearm), then the stand-in props
+            // shown while their states play
             var socketR = AddHandSocket(boneMap, "r");
             AddHandSocket(boneMap, "l");
+            var socketShield = AddShieldSocket(boneMap);
             var preview = root.AddComponent<HumanToolPreview>();
             preview.animator = hf.animator;
+            string sword = string.Join(",", SwordStates);
             preview.tools = new[]
             {
                 new HumanToolPreview.StateTool { state = "Chop", tool = BuildHelperAxe(socketR) },
                 new HumanToolPreview.StateTool { state = "Hammer", tool = BuildHelperHammer(socketR) },
+                new HumanToolPreview.StateTool { state = sword, tool = BuildHelperSword(socketR) },
+                new HumanToolPreview.StateTool { state = sword, tool = BuildHelperShield(socketShield) },
+                new HumanToolPreview.StateTool { state = string.Join(",", TwoHandStates), tool = BuildHelperGreatsword(socketR) },
+                new HumanToolPreview.StateTool { state = string.Join(",", SpearStates), tool = BuildHelperSpear(socketR) },
             };
             hf.rig = BuildRigData(model.transform, boneMap, out var bones);
             hf.bones = bones;
@@ -641,6 +658,127 @@ namespace Humans.EditorTools
             socket.SetPositionAndRotation(middle.position - finger * 0.016f - dorsal * 0.016f, Quaternion.LookRotation(fwd, up));
             socket.SetParent(hand, true);
             return socket;
+        }
+
+        /// <summary>Socket_Shield for a strapped shield (hum_anim._shield_arm): 55% of the way from the elbow to the
+        /// wrist and 6 cm out over the back of the forearm, +Y the back of the forearm (the shield's face), +Z along
+        /// the forearm toward the hand. Parented to the left hand, not the forearm: the clips keep that wrist
+        /// straight, and Humanoid gives the forearm bone only part of the forearm's twist (Lower Arm Twist), so a
+        /// shield on it would turn half as far as the clip turns it.</summary>
+        static Transform AddShieldSocket(Dictionary<string, Transform> boneMap)
+        {
+            if (!boneMap.TryGetValue("lowerarm_l", out var fore) || !boneMap.TryGetValue("hand_l", out var hand)
+                || !boneMap.TryGetValue("hand_r", out var other) || !boneMap.TryGetValue("index_01_l", out var index)
+                || !boneMap.TryGetValue("pinky_01_l", out var pinky))
+            {
+                Debug.LogWarning("[HumanSetup] left arm bones missing: no shield socket");
+                return null;
+            }
+            Vector3 h = hand.position;
+            var n = Vector3.Cross(index.position - h, pinky.position - h).normalized;
+            var dorsal = Vector3.Dot(n, (h - other.position).normalized) > 0 ? n : -n;   // (as AddHandSocket)
+            var axis = (h - fore.position).normalized;
+            dorsal = (dorsal - axis * Vector3.Dot(axis, dorsal)).normalized;
+            var socket = new GameObject("Socket_Shield").transform;
+            socket.SetPositionAndRotation(Vector3.Lerp(fore.position, h, 0.55f) + dorsal * 0.06f, Quaternion.LookRotation(axis, dorsal));
+            socket.SetParent(hand, true);
+            return socket;
+        }
+
+        static Material HelperMat(string name, Color color, float smooth, float metal = 0f)
+        {
+            var path = $"{Materials}/{name}.mat";
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (mat != null) return mat;
+            mat = new Material(Shader.Find("Universal Render Pipeline/Lit")) { name = name };
+            mat.SetColor("_BaseColor", color);
+            mat.SetFloat("_Smoothness", smooth);
+            mat.SetFloat("_Metallic", metal);
+            AssetDatabase.CreateAsset(mat, path);
+            return mat;
+        }
+
+        static Transform NewProp(Transform socket, string name)
+        {
+            var t = new GameObject(name).transform;
+            t.SetParent(socket, false);
+            return t;
+        }
+
+        static void PropPart(Transform prop, PrimitiveType type, string name, Vector3 pos, Vector3 scale, Material mat)
+        {
+            var g = GameObject.CreatePrimitive(type);
+            g.name = name;
+            Object.DestroyImmediate(g.GetComponent<Collider>());
+            g.GetComponent<MeshRenderer>().sharedMaterial = mat;
+            g.transform.SetParent(prop, false);
+            g.transform.localPosition = pos;
+            g.transform.localScale = scale;
+        }
+
+        /// <summary>A round rod along the socket's +Y from y0 to y1.</summary>
+        static void Rod(Transform prop, string name, float y0, float y1, float r, Material mat) =>
+            PropPart(prop, PrimitiveType.Cylinder, name, new Vector3(0, (y0 + y1) / 2, 0), new Vector3(2 * r, (y1 - y0) / 2, 2 * r), mat);
+
+        // The combat stand-ins match weapons_helper.py's in Blender (the clips were checked against those): the
+        // handle along the socket's +Y, a blade's edge the knuckles' way (+Z).
+
+        /// <summary>One-handed sword: a 75 cm blade from 6 cm above the fist, cross guard, grip, pommel.</summary>
+        static GameObject BuildHelperSword(Transform socket)
+        {
+            if (socket == null) return null;
+            var metal = HelperMat("M_HelperMetal", new Color(0.62f, 0.62f, 0.66f), 0.6f, 0.8f);
+            var wood = HelperMat("M_HelperProp", new Color(0.45f, 0.30f, 0.17f), 0.25f);
+            var p = NewProp(socket, "HelperSword");
+            PropPart(p, PrimitiveType.Cube, "Blade", new Vector3(0, 0.435f, 0), new Vector3(0.008f, 0.75f, 0.045f), metal);
+            PropPart(p, PrimitiveType.Cube, "Guard", new Vector3(0, 0.055f, 0), new Vector3(0.025f, 0.02f, 0.17f), metal);
+            Rod(p, "Grip", -0.07f, 0.05f, 0.015f, wood);
+            PropPart(p, PrimitiveType.Cube, "Pommel", new Vector3(0, -0.08f, 0), new Vector3(0.03f, 0.03f, 0.03f), metal);
+            p.gameObject.SetActive(false);
+            return p.gameObject;
+        }
+
+        /// <summary>Two-handed sword in the right (upper) fist: a 1 m blade, the grip running down past the left
+        /// fist 17 cm below (hum_anim.GREAT_HANDS).</summary>
+        static GameObject BuildHelperGreatsword(Transform socket)
+        {
+            if (socket == null) return null;
+            var metal = HelperMat("M_HelperMetal", new Color(0.62f, 0.62f, 0.66f), 0.6f, 0.8f);
+            var wood = HelperMat("M_HelperProp", new Color(0.45f, 0.30f, 0.17f), 0.25f);
+            var p = NewProp(socket, "HelperGreatsword");
+            PropPart(p, PrimitiveType.Cube, "Blade", new Vector3(0, 0.57f, 0), new Vector3(0.01f, 1.0f, 0.055f), metal);
+            PropPart(p, PrimitiveType.Cube, "Guard", new Vector3(0, 0.06f, 0), new Vector3(0.03f, 0.025f, 0.26f), metal);
+            Rod(p, "Grip", -0.23f, 0.06f, 0.016f, wood);
+            PropPart(p, PrimitiveType.Cube, "Pommel", new Vector3(0, -0.24f, 0), new Vector3(0.035f, 0.035f, 0.035f), metal);
+            p.gameObject.SetActive(false);
+            return p.gameObject;
+        }
+
+        /// <summary>Spear in the right (rear) fist: 2 m, the butt 40 cm behind it, the left fist 32 cm up the shaft
+        /// (hum_anim.SPEAR_HANDS), a leaf head.</summary>
+        static GameObject BuildHelperSpear(Transform socket)
+        {
+            if (socket == null) return null;
+            var metal = HelperMat("M_HelperMetal", new Color(0.62f, 0.62f, 0.66f), 0.6f, 0.8f);
+            var wood = HelperMat("M_HelperProp", new Color(0.45f, 0.30f, 0.17f), 0.25f);
+            var p = NewProp(socket, "HelperSpear");
+            Rod(p, "Shaft", -0.40f, 1.55f, 0.016f, wood);
+            PropPart(p, PrimitiveType.Cube, "Head", new Vector3(0, 1.66f, 0), new Vector3(0.008f, 0.22f, 0.05f), metal);
+            p.gameObject.SetActive(false);
+            return p.gameObject;
+        }
+
+        /// <summary>Round shield, 58 cm, on Socket_Shield: the disc's face along the socket's +Y, a boss.</summary>
+        static GameObject BuildHelperShield(Transform socket)
+        {
+            if (socket == null) return null;
+            var metal = HelperMat("M_HelperMetal", new Color(0.62f, 0.62f, 0.66f), 0.6f, 0.8f);
+            var boards = HelperMat("M_HelperShield", new Color(0.40f, 0.24f, 0.12f), 0.2f);
+            var p = NewProp(socket, "HelperShield");
+            PropPart(p, PrimitiveType.Cylinder, "Board", Vector3.zero, new Vector3(0.58f, 0.0075f, 0.58f), boards);
+            PropPart(p, PrimitiveType.Sphere, "Boss", new Vector3(0, 0.008f, 0), new Vector3(0.12f, 0.06f, 0.12f), metal);
+            p.gameObject.SetActive(false);
+            return p.gameObject;
         }
 
         /// <summary>The blade's roll round the handle from the knuckles (hum_anim.AXE_ROLL, which is -42 in
@@ -765,10 +903,99 @@ namespace Humans.EditorTools
             ui.target = creator.GetComponent<HumanFace>();
             ui.lineup = lineup;
             ui.cam = cam;
+            ui.libraries = AllLibraries();
             var hc = creator.GetComponent<HumanFace>().head.bounds.center;
             cam.transform.position = hc + new Vector3(0.2f, 0, 0.75f);
             cam.transform.LookAt(hc);
             EditorSceneManager.SaveScene(scene, ScenePath);
+        }
+
+        static HumanClipLibrary[] AllLibraries() =>
+            AssetDatabase.FindAssets("t:HumanClipLibrary")
+                .Select(g => AssetDatabase.LoadAssetAtPath<HumanClipLibrary>(AssetDatabase.GUIDToAssetPath(g)))
+                .Where(l => l != null).OrderBy(l => l.title).ToArray();
+
+        /// <summary>A HumanClipLibrary from the folder selected in the Project window: every Humanoid clip under
+        /// it, split by sex where the path or name says so ("/Male/" "/Female/", "...M@" "...F@" prefixes - how
+        /// animation packs such as Kevin Iglesias' lay them out), one state per clip named "[folder] clip"
+        /// (the "Human?@" prefix dropped so both sexes share names). The open showcase's clip browser gets it.</summary>
+        [MenuItem("Tools/Humans/Build Clip Library From Folder")]
+        static void BuildLibraryFromSelection()
+        {
+            var path = Selection.activeObject != null ? AssetDatabase.GetAssetPath(Selection.activeObject) : null;
+            if (string.IsNullOrEmpty(path) || !AssetDatabase.IsValidFolder(path))
+            {
+                Debug.LogWarning("[HumanSetup] select a folder of Humanoid clips in the Project window first");
+                return;
+            }
+            BuildLibrary(path, Path.GetFileName(path));
+        }
+
+        public static HumanClipLibrary BuildLibrary(string folder, string title)
+        {
+            const string dir = Anim + "/Libraries";
+            if (!AssetDatabase.IsValidFolder(dir)) AssetDatabase.CreateFolder(Anim, "Libraries");
+            var bySex = new Dictionary<string, List<(string state, AnimationClip clip)>> { ["M"] = new(), ["F"] = new() };
+            var names = new List<string>();
+            foreach (var guid in AssetDatabase.FindAssets("t:AnimationClip", new[] { folder }))
+            {
+                var file = AssetDatabase.GUIDToAssetPath(guid);
+                foreach (var clip in AssetDatabase.LoadAllAssetsAtPath(file).OfType<AnimationClip>())
+                {
+                    if (clip.name.StartsWith("__preview__") || !clip.humanMotion) continue;
+                    string rel = file.Replace('\\', '/');
+                    int at = clip.name.IndexOf('@');
+                    string pre = at > 0 ? clip.name.Substring(0, at) : "";
+                    bool female = rel.Contains("/Female/") || pre.EndsWith("F");
+                    bool male = rel.Contains("/Male/") || pre.EndsWith("M");
+                    string cat = Path.GetFileName(Path.GetDirectoryName(file));
+                    string state = $"[{cat}] {(at > 0 ? clip.name.Substring(at + 1) : clip.name)}".Replace('.', '_');
+                    foreach (var sx in female && !male ? new[] { "F" } : male && !female ? new[] { "M" } : new[] { "M", "F" })
+                    {
+                        var list = bySex[sx];
+                        string unique = state;
+                        for (int k = 2; list.Any(e => e.state == unique); k++) unique = $"{state} ({k})";
+                        list.Add((unique, clip));
+                        if (!names.Contains(unique)) names.Add(unique);
+                    }
+                }
+            }
+            AnimatorController Controller(string sx)
+            {
+                if (bySex[sx].Count == 0) return null;
+                var cpath = $"{dir}/{title}_{sx}.controller";
+                AssetDatabase.DeleteAsset(cpath);
+                var ac = AnimatorController.CreateAnimatorControllerAtPath(cpath);
+                var sm = ac.layers[0].stateMachine;
+                int k = 0;
+                foreach (var (state, clip) in bySex[sx].OrderBy(e => e.state))
+                {
+                    var st = sm.AddState(state, new Vector3(300 + 250 * (k / 40), 50 * (k % 40), 0));
+                    st.motion = clip;
+                    k++;
+                }
+                return ac;
+            }
+            var lpath = $"{dir}/{title}.asset";
+            var lib = AssetDatabase.LoadAssetAtPath<HumanClipLibrary>(lpath);
+            if (lib == null) { lib = ScriptableObject.CreateInstance<HumanClipLibrary>(); AssetDatabase.CreateAsset(lib, lpath); }
+            lib.title = title;
+            lib.male = Controller("M");
+            lib.female = Controller("F");
+            names.Sort(System.StringComparer.Ordinal);
+            lib.states = names.ToArray();
+            EditorUtility.SetDirty(lib);
+            AssetDatabase.SaveAssets();
+            var ui = Object.FindFirstObjectByType<HumanCreatorUI>();
+            if (ui != null && !Application.isPlaying)
+            {
+                ui.libraries = AllLibraries();
+                EditorUtility.SetDirty(ui);
+                EditorSceneManager.MarkSceneDirty(ui.gameObject.scene);
+                EditorSceneManager.SaveScene(ui.gameObject.scene);
+            }
+            Debug.Log($"[HumanSetup] clip library '{title}': {bySex["M"].Count} male, {bySex["F"].Count} female clips -> {lpath}");
+            return lib;
         }
 
         [MenuItem("Tools/Humans/Render Checks")]
