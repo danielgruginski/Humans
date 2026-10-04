@@ -13,8 +13,10 @@ namespace Humans.EditorTools
     /// Tools > Humans > Rebuild Prefab and Showcase
     ///   import settings (Human_Body.fbx as Humanoid, Human_Hair.fbx as Generic, mask textures), materials,
     ///   HumanRigData from human_rig.json (Blender -> model space fitted from the rest skeleton), male/female
-    ///   Kevin Iglesias controllers (idle, walk, run), Prefabs/Human.prefab (HumanFace + model + hair pieces and
-    ///   garments (Human_Cloth.fbx) re-bound to the model's skeleton + LODGroup), Scenes/Humans_Showcase.unity, renders in Logs/HumanSetup.
+    ///   Kevin Iglesias controllers (idle, walk, run), Prefabs/Human.prefab (HumanFace + model: skeleton, bodies and
+    ///   heads per LOD + LODGroup; no hair or garments), the pieces (every hairstyle, beard, brows and garment per
+    ///   build cut out of Human_Hair.fbx / Human_Cloth_*.fbx into Resources/HumanPieces, made by HumanFace when worn),
+    ///   Scenes/Humans_Showcase.unity, renders in Logs/HumanSetup.
     /// </summary>
     public static class HumanSetup
     {
@@ -29,6 +31,8 @@ namespace Humans.EditorTools
         const string ConfigPath = Data + "/human_face_config.json", RigJson = Data + "/human_rig.json";
         const string RigAsset = Data + "/HumanRigData.asset";
         public const string PrefabPath = Prefabs + "/Human.prefab";
+        /// <summary>one HumanPiece per hairstyle, beard, brows and garment per build (loaded by name when worn)</summary>
+        public const string PieceDir = Root + "/Resources/" + HumanPiece.Folder;
         public const string ScenePath = Scenes + "/Humans_Showcase.unity";
         const string Clips = Anim + "/Clips", ClipsJson = Data + "/human_clips.json";
 
@@ -43,7 +47,8 @@ namespace Humans.EditorTools
                 return;
             }
             HumanFaceConfig.ClearCache();
-            foreach (var d in new[] { Materials, Prefabs, Scenes, Anim, Data }) EnsureFolder(d);
+            HumanFace.ClearPieceCache();
+            foreach (var d in new[] { Materials, Prefabs, Scenes, Anim, Data, PieceDir }) EnsureFolder(d);
             if (AssetDatabase.LoadAssetAtPath<Object>(Models + "/Human_Head.fbx") != null)
                 AssetDatabase.DeleteAsset(Models + "/Human_Head.fbx");            // superseded by Human_Body.fbx
             ConfigureTextures();
@@ -523,50 +528,56 @@ namespace Humans.EditorTools
             foreach (var h in heads) if (h) h.sharedMaterials = new[] { mats.skin, mats.eye };
             foreach (var b in bodies) if (b) b.sharedMaterial = mats.body;
 
-            // hair pieces: re-bind to this skeleton by bone name, one container per LOD
+            // hair, beards, brows and garments are not in the prefab: each piece is cut out into a HumanPiece (its
+            // meshes per LOD, materials, the skeleton bones by name) that HumanFace makes when it is worn. The prefab
+            // keeps the empty containers: one per LOD for hair, one "Clothes" for every garment LOD.
             var hairRoots = new Transform[3];
             for (int l = 0; l < 3; l++)
             {
                 hairRoots[l] = new GameObject(l == 0 ? "Hair" : $"HairLod{l}").transform;
                 hairRoots[l].SetParent(model.transform, false);
             }
+            var clothRoot = new GameObject("Clothes").transform;
+            clothRoot.SetParent(model.transform, false);
+            var cut = new SortedDictionary<string, List<HumanPiece.Lod>>(System.StringComparer.Ordinal);
+            void Cut(SkinnedMeshRenderer smr, Material[] materials)
+            {
+                int lod = LodOf(smr.name);
+                string piece = lod == 0 ? smr.name : smr.name.Substring(0, smr.name.LastIndexOf("_L", System.StringComparison.Ordinal));
+                if (!cut.TryGetValue(piece, out var lods)) cut[piece] = lods = new List<HumanPiece.Lod>();
+                while (lods.Count <= lod) lods.Add(new HumanPiece.Lod());
+                lods[lod] = new HumanPiece.Lod
+                {
+                    name = smr.name, mesh = smr.sharedMesh, materials = materials,
+                    bones = smr.bones.Select(b => b != null && boneMap.ContainsKey(b.name) ? b.name : "").ToArray(),
+                    rootBone = smr.rootBone != null && boneMap.ContainsKey(smr.rootBone.name) ? smr.rootBone.name : "",
+                    bounds = smr.localBounds,
+                    position = smr.transform.localPosition, rotation = smr.transform.localRotation, scale = smr.transform.localScale,
+                };
+            }
             var hair = (GameObject)PrefabUtility.InstantiatePrefab(AssetDatabase.LoadAssetAtPath<GameObject>(HairFbx));
             PrefabUtility.UnpackPrefabInstance(hair, PrefabUnpackMode.Completely, InteractionMode.AutomatedAction);
             foreach (var smr in hair.GetComponentsInChildren<SkinnedMeshRenderer>(true))
-            {
-                smr.bones = smr.bones.Select(b => b != null && boneMap.TryGetValue(b.name, out var t) ? t : null).ToArray();
-                if (smr.rootBone != null && boneMap.TryGetValue(smr.rootBone.name, out var rb)) smr.rootBone = rb;
-                var m = new Material[smr.sharedMesh.subMeshCount];
-                for (int i = 0; i < m.Length; i++) m[i] = mats.hair;
-                smr.sharedMaterials = m;
-                smr.transform.SetParent(hairRoots[LodOf(smr.name)], false);
-            }
+                Cut(smr, Enumerable.Repeat(mats.hair, smr.sharedMesh.subMeshCount).ToArray());
             Object.DestroyImmediate(hair);
-
-            // garments: same re-binding, all LODs under one "Clothes" container (HumanFace switches them by outfit)
             var cfg = HumanFaceConfig.Load(AssetDatabase.LoadAssetAtPath<TextAsset>(ConfigPath));
-            var clothRoot = new GameObject("Clothes").transform;
-            clothRoot.SetParent(model.transform, false);
             var clothFbxs = ClothFbxs();
             if (clothFbxs.Length == 0) Debug.LogWarning($"[HumanSetup] no {Models}/Human_Cloth_*.fbx: no garments");
             foreach (var clothPath in clothFbxs)
             {
-                var clothAsset = AssetDatabase.LoadAssetAtPath<GameObject>(clothPath);
-                var cloth = (GameObject)PrefabUtility.InstantiatePrefab(clothAsset);
+                var cloth = (GameObject)PrefabUtility.InstantiatePrefab(AssetDatabase.LoadAssetAtPath<GameObject>(clothPath));
                 PrefabUtility.UnpackPrefabInstance(cloth, PrefabUnpackMode.Completely, InteractionMode.AutomatedAction);
                 foreach (var smr in cloth.GetComponentsInChildren<SkinnedMeshRenderer>(true))
                 {
-                    smr.bones = smr.bones.Select(b => b != null && boneMap.TryGetValue(b.name, out var t) ? t : null).ToArray();
-                    if (smr.rootBone != null && boneMap.TryGetValue(smr.rootBone.name, out var rb)) smr.rootBone = rb;
                     string g = smr.name.Substring("Cloth_".Length).Split('_')[0];      // Cloth_<G>_<build>[_L<n>]
                     var kind = cfg.FindGarment(g)?.material;
                     var mat = kind == "leather" ? mats.leather : kind == "quilt" ? mats.quilt : kind == "mail" ? mats.mail
                             : kind == "plate" ? mats.plate : mats.cloth;
-                    smr.sharedMaterials = Enumerable.Repeat(mat, smr.sharedMesh.subMeshCount).ToArray();
-                    smr.transform.SetParent(clothRoot, false);
+                    Cut(smr, Enumerable.Repeat(mat, smr.sharedMesh.subMeshCount).ToArray());
                 }
                 Object.DestroyImmediate(cloth);
             }
+            WritePieces(cut);
 
             var all = model.GetComponentsInChildren<SkinnedMeshRenderer>(true);
             foreach (var smr in all)
@@ -586,6 +597,7 @@ namespace Humans.EditorTools
             };
             hf.bodies = bodies;
             hf.clothRoot = clothRoot;
+            hf.pieces = cut.Keys.ToArray();
             hf.modelRoot = model.transform;
             hf.animator = model.GetComponent<Animator>();
             // our clips are in place (height and XZ baked into the pose); only the turns carry root yaw, so root
@@ -625,10 +637,44 @@ namespace Humans.EditorTools
             var group = root.AddComponent<LODGroup>();
             group.SetLODs(new[] { new LOD(0.25f, lods[0].ToArray()), new LOD(0.07f, lods[1].ToArray()), new LOD(0.004f, lods[2].ToArray()) });
             group.RecalculateBounds();
-            hf.Randomize(1);
+            hf.seed = 1;                                   // its face, not applied: that would make pieces in the prefab
+            hf.face = HumanFaceGenerator.Random(hf.Config, 1);
+            if (hf.animator != null) hf.animator.runtimeAnimatorController = hf.face.sex >= 0 ? male : female;
             var prefab = PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
             Object.DestroyImmediate(root);
             return prefab;
+        }
+
+        /// <summary>one HumanPiece asset per piece in Resources/HumanPieces (updated in place, so references and
+        /// .meta files stay); pieces the models no longer have are deleted</summary>
+        static void WritePieces(SortedDictionary<string, List<HumanPiece.Lod>> cut)
+        {
+            EnsureFolder(PieceDir);
+            var keep = new HashSet<string>();
+            AssetDatabase.StartAssetEditing();
+            try
+            {
+                foreach (var kv in cut)
+                {
+                    string path = $"{PieceDir}/{kv.Key}.asset";
+                    keep.Add(path);
+                    var asset = AssetDatabase.LoadAssetAtPath<HumanPiece>(path);
+                    bool fresh = asset == null;
+                    if (fresh) asset = ScriptableObject.CreateInstance<HumanPiece>();
+                    asset.lods = kv.Value.ToArray();
+                    if (fresh) AssetDatabase.CreateAsset(asset, path);
+                    else EditorUtility.SetDirty(asset);
+                }
+                foreach (var guid in AssetDatabase.FindAssets("t:HumanPiece", new[] { PieceDir }))
+                {
+                    var path = AssetDatabase.GUIDToAssetPath(guid);
+                    if (!keep.Contains(path)) AssetDatabase.DeleteAsset(path);
+                }
+            }
+            finally { AssetDatabase.StopAssetEditing(); }
+            AssetDatabase.SaveAssets();
+            HumanFace.ClearPieceCache();
+            Debug.Log($"[HumanSetup] {cut.Count} pieces ({cut.Values.Sum(l => l.Count(x => x.mesh != null))} renderers) in {PieceDir}");
         }
 
         /// <summary>Socket_R / Socket_L under the hand bone, from the rest skeleton (the same geometry

@@ -336,6 +336,14 @@ Done: head + eyes, stylisation, UVs, paint masks, preview shader, 98 keys, rando
 - Then "link me back to kevin iglesias animations ... test how they look with the new bones": clip libraries
   (README "Trying other clip packs"); "Kevin Iglesias" built in MedievalSetting and wired into the showcase.
 
+- 2026-10-03 (MedievalSetting session, Daniel: "go with option 2"): the prefab no longer carries the pieces. It was
+  the whole creator - 1,324 objects, 1,196 skinned renderers (every garment x 6 builds x 3 LODs, every hair /
+  beard / brows) - copied for every character, with every mesh loaded. HumanSetup now cuts each piece into a
+  `HumanPiece` (Resources/HumanPieces, 398) and `HumanFace` makes a worn piece's renderers on demand (README
+  "Unity"). Checked in the game: 5 villagers + player 763 objects (was 6,624), outfits, hair under hoods,
+  forced LOD1, re-dressing the player in armour, the game's silhouette tag (pieces take the body's
+  renderingLayerMask); showcase lineup renders unchanged.
+
 ## Open / next
 
 - **Combat clips are work in progress** (Daniel, 2026-09-28: "the quality of the animations was not good ... the

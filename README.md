@@ -117,9 +117,19 @@ powershell -ExecutionPolicy Bypass -File tools\install_to_unity.ps1 -Project E:\
 ```
 then **Tools > Humans > Rebuild Prefab and Showcase** (renders go to `MedievalSetting/Logs/HumanSetup`).
 
-- `Prefabs/Human.prefab`: `HumanFace` + Head (SkinnedMeshRenderer, 98 blend shapes, skin + eye submeshes) +
-  Hair (20 pieces: `Hair_*`, `Beard_*`, `Brows_*`, one active per kind). The FBXs import as MeshRenderers
-  (no rig), so the setup swaps them for bone-less SkinnedMeshRenderers.
+- `Prefabs/Human.prefab`: `HumanFace` + the model (skeleton, Body and Head per LOD: SkinnedMeshRenderers, 98
+  face blend shapes, skin + eye submeshes) + empty containers for the pieces (`Hair`, `HairLod1`, `HairLod2`,
+  `Clothes`) + LODGroup; ~134 objects, 262 KB.
+- **Pieces are made when worn.** Every hairstyle, beard, brows and garment per build (`Hair_*`, `Beard_*`,
+  `Brows_*`, `Cloth_<Garment>_<Build>`: 398) is cut out of `Human_Hair.fbx` / `Human_Cloth_*.fbx` into a
+  `HumanPiece` asset in `Resources/HumanPieces` (its mesh per LOD, materials, skinning bones by name).
+  `HumanFace.Apply` makes a worn piece's renderers under its container the first time it is worn (loading
+  that piece only), switches taken-off ones off, and puts what it made into the LODGroup; `HumanFace.pieces`
+  lists what there is (the creator's style lists). A character is ~150 objects with ~3 ms to spawn and
+  dress; only worn pieces' meshes are in memory. Before (2026-10-03) the prefab carried every piece: 1,324
+  objects and 1,196 skinned renderers per character, and every mesh (~610 MB in the editor) loaded with it.
+  Pieces are not made inside a prefab asset or its editing stage (they would be saved into it); in a scene
+  they are saved with it (the showcase's).
 - Shaders `Humans/Skin`, `Humans/Eye`, `Humans/Hair` (URP 17, Forward+): the same maths as the Blender preview.
   Per-character colours are sent with MaterialPropertyBlocks, so all humans share three materials. Eyes
   receive no shadows.
@@ -141,8 +151,10 @@ then **Tools > Humans > Rebuild Prefab and Showcase** (renders go to `MedievalSe
 | Beard | 7k-25k | 0.46k-2k | 0.14k-0.34k (shell only) |
 | Brows | 1.3k-1.9k | 0.5k-0.7k | none (painted brows at 0.8) |
 
-Each LOD carries the face keys, so one `HumanFace` drives all three. In Unity the prefab holds containers
-LOD0/LOD1/LOD2, each with a head and a Hair folder, under a LODGroup (transitions at 0.15, 0.04, 0.002 of screen height).
+Each LOD carries the face keys, so one `HumanFace` drives all three. In Unity the prefab has a head per LOD
+and a hair container per LOD (garments of every LOD share `Clothes`), under a LODGroup (transitions at 0.25, 0.07,
+0.004 of screen height) that `HumanFace` extends with the pieces it makes; a forced LOD (`LODGroup.ForceLOD`)
+holds through that.
 
 ## Body and rig
 

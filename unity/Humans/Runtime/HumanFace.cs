@@ -11,6 +11,9 @@ namespace Humans
     /// three materials.
     /// Garments (Cloth_X, Cloth_X_L1, ...) under clothRoot are switched on by the outfit and coloured per renderer;
     /// the body regions they cover are clipped by the body shader (_Hide bit mask).
+    /// The prefab carries no pieces: a hairstyle, beard, brows or garment is made under its container the first time
+    /// it is worn, from its HumanPiece in Resources/HumanPieces (so a character holds, and memory loads, only what
+    /// is worn), and switched off, not destroyed, when taken off. Not inside a prefab asset or its editing stage.
     /// </summary>
     [ExecuteAlways]
     public class HumanFace : MonoBehaviour
@@ -49,6 +52,9 @@ namespace Humans
         public bool randomOnStart;
         public int seed;
         public HumanFaceData face = new HumanFaceData();
+        [Header("Pieces (made when worn, from Resources/HumanPieces)")]
+        [Tooltip("Every piece HumanSetup cut out (Hair_X, Beard_X, Brows_X, Cloth_Garment_Build): the styles on offer")]
+        public string[] pieces = new string[0];
 
         static readonly int IdTone = Shader.PropertyToID("_Tone"), IdLip = Shader.PropertyToID("_Lip"),
             IdHair = Shader.PropertyToID("_Hair"), IdLash = Shader.PropertyToID("_Lash"),
@@ -65,6 +71,14 @@ namespace Humans
             IdSuitColor = Shader.PropertyToID("_SuitColor");
 
         static readonly Dictionary<Mesh, string[]> ShapeNames = new Dictionary<Mesh, string[]>();        MaterialPropertyBlock mpb;
+        static readonly Dictionary<string, HumanPiece> Loaded = new Dictionary<string, HumanPiece>();
+        HashSet<string> pieceSet;
+        string[] pieceSetOf;
+        Dictionary<string, Transform> boneMap;
+        bool lodsDirty;
+
+        /// <summary>forget the loaded pieces (HumanSetup rebuilt them)</summary>
+        public static void ClearPieceCache() => Loaded.Clear();
 
         public HumanFaceConfig Config => HumanFaceConfig.Load(config);
 
@@ -89,15 +103,130 @@ namespace Humans
             Apply();
         }
 
-        /// <summary>Hair/beard/brow piece names available under hairRoot, by prefix ("Hair_", "Beard_", "Brows_").</summary>
+        /// <summary>Hair/beard/brow styles on offer, by prefix ("Hair_", "Beard_", "Brows_").</summary>
         public List<string> Styles(string prefix)
         {
             var list = new List<string>();
-            if (hairRoot == null) return list;
-            foreach (Transform t in hairRoot)
-                if (t.name.StartsWith(prefix)) list.Add(t.name.Substring(prefix.Length));
+            foreach (var p in PieceSet)
+                if (p.StartsWith(prefix)) list.Add(p.Substring(prefix.Length));
             list.Sort();
             return list;
+        }
+
+        /// <summary>the pieces there are (a prefab from before they were cut out: the ones it carries)</summary>
+        HashSet<string> PieceSet
+        {
+            get
+            {
+                if (pieceSet != null && pieceSetOf == pieces) return pieceSet;
+                pieceSetOf = pieces;
+                pieceSet = new HashSet<string>(pieces ?? new string[0]);
+                if (pieceSet.Count == 0)
+                {
+                    void Add(Transform root) { if (root != null) foreach (Transform t in root) pieceSet.Add(BaseName(t.name)); }
+                    Add(hairRoot);
+                    if (lowerLods != null) foreach (var l in lowerLods) Add(l?.hairRoot);
+                    Add(clothRoot);
+                }
+                return pieceSet;
+            }
+        }
+
+        int LodCount => 1 + (lowerLods != null ? lowerLods.Length : 0);
+
+        /// <summary>pieces are made in scenes and in play, never inside a prefab asset or its editing stage (they would
+        /// be saved into it)</summary>
+        bool CanMakePieces
+        {
+            get
+            {
+                if (!gameObject.scene.IsValid()) return false;
+#if UNITY_EDITOR
+                if (!Application.isPlaying && UnityEditor.SceneManagement.PrefabStageUtility.GetPrefabStage(gameObject) != null) return false;
+#endif
+                return true;
+            }
+        }
+
+        /// <summary>a worn piece's renderer at one LOD under its container: the one made before, else made now from its
+        /// HumanPiece (null: no such piece or LOD). It takes the body's rendering layers (a game may have tagged them).</summary>
+        SkinnedMeshRenderer Piece(string piece, int lod, Transform parent)
+        {
+            string name = lod == 0 ? piece : $"{piece}_L{lod}";
+            var have = parent.Find(name);
+            if (have != null) return have.GetComponent<SkinnedMeshRenderer>();
+            if (!CanMakePieces || !PieceSet.Contains(piece)) return null;
+            var l = LoadPiece(piece)?.At(lod);
+            if (l == null) return null;
+            var go = new GameObject(name) { layer = parent.gameObject.layer };
+            go.transform.SetParent(parent, false);
+            go.transform.SetLocalPositionAndRotation(l.position, l.rotation);
+            go.transform.localScale = l.scale;
+            var smr = go.AddComponent<SkinnedMeshRenderer>();
+            smr.sharedMesh = l.mesh;
+            smr.sharedMaterials = l.materials;
+            var bones = new Transform[l.bones.Length];
+            for (int i = 0; i < bones.Length; i++) bones[i] = Bone(l.bones[i]);
+            smr.bones = bones;
+            smr.rootBone = Bone(l.rootBone);
+            smr.localBounds = l.bounds;
+            smr.updateWhenOffscreen = false;
+            smr.skinnedMotionVectors = false;
+            var like = bodies != null && bodies.Length > 0 && bodies[0] != null ? (Renderer)bodies[0] : head;
+            if (like != null) smr.renderingLayerMask = like.renderingLayerMask;
+            lodsDirty = true;
+            return smr;
+        }
+
+        static HumanPiece LoadPiece(string piece)
+        {
+            if (Loaded.TryGetValue(piece, out var p) && p != null) return p;
+            p = Resources.Load<HumanPiece>(HumanPiece.Folder + "/" + piece);
+            if (p == null) Debug.LogWarning($"[HumanFace] no piece Resources/{HumanPiece.Folder}/{piece}");
+            Loaded[piece] = p;
+            return p;
+        }
+
+        /// <summary>a skeleton bone by name (the model's transforms; pieces' renderers are not bones)</summary>
+        Transform Bone(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return null;
+            if (boneMap == null)
+            {
+                boneMap = new Dictionary<string, Transform>();
+                foreach (var t in (modelRoot != null ? modelRoot : transform).GetComponentsInChildren<Transform>(true))
+                    if (!t.TryGetComponent<SkinnedMeshRenderer>(out _)) boneMap[t.name] = t;
+            }
+            return boneMap.TryGetValue(name, out var b) ? b : null;
+        }
+
+        /// <summary>the LODGroup's renderers: the body and head per LOD and every piece made so far</summary>
+        void RefreshLods()
+        {
+            lodsDirty = false;
+            if (!TryGetComponent<LODGroup>(out var group)) return;
+            var lods = group.GetLODs();
+            for (int l = 0; l < lods.Length; l++)
+            {
+                var rs = new List<Renderer>();
+                if (bodies != null && l < bodies.Length && bodies[l] != null) rs.Add(bodies[l]);
+                var set = l == 0 ? null : lowerLods != null && l - 1 < lowerLods.Length ? lowerLods[l - 1] : null;
+                var h = l == 0 ? head : set?.head;
+                if (h != null) rs.Add(h);
+                var hr = l == 0 ? hairRoot : set?.hairRoot;
+                if (hr != null) foreach (Transform t in hr) if (t.TryGetComponent<SkinnedMeshRenderer>(out var s)) rs.Add(s);
+                if (clothRoot != null)
+                    foreach (Transform t in clothRoot)
+                        if (LodOf(t.name) == l && t.TryGetComponent<SkinnedMeshRenderer>(out var s)) rs.Add(s);
+                lods[l].renderers = rs.ToArray();
+            }
+            group.SetLODs(lods);
+        }
+
+        static int LodOf(string n)
+        {
+            int i = n.LastIndexOf("_L", StringComparison.Ordinal);
+            return i > 0 && i + 2 < n.Length && int.TryParse(n.Substring(i + 2), out var l) ? l : 0;
         }
 
         public void Apply()
@@ -105,10 +234,13 @@ namespace Humans
             if (config == null || head == null || face == null) return;
             var weights = face.ToKeyWeights(Config);
             mpb ??= new MaterialPropertyBlock();
-            ApplySet(head, hairRoot, 0f, weights);
+            ApplySet(head, hairRoot, 0f, weights, 0);
             if (lowerLods != null)
-                foreach (var l in lowerLods)
-                    if (l != null && l.head != null) ApplySet(l.head, l.hairRoot, l.minPaintedBrows, weights);
+                for (int i = 0; i < lowerLods.Length; i++)
+                {
+                    var l = lowerLods[i];
+                    if (l != null && l.head != null) ApplySet(l.head, l.hairRoot, l.minPaintedBrows, weights, i + 1);
+                }
             var bodyWeights = HumanFaceData.BodyOnly(Config, weights);     // the build: body and skeleton
             int hide = Config.HideMask(face.GarmentNames);
             var suit = Config.SuitColor(face.outfit);
@@ -134,6 +266,7 @@ namespace Humans
                 if (want != null && animator.runtimeAnimatorController != want) animator.runtimeAnimatorController = want;
             }
             ApplySkeleton(bodyWeights);
+            if (lodsDirty) RefreshLods();
         }
 
         /// <summary>Bones move by the keys' joint deltas; height scales the model; animated hips get lifted.</summary>
@@ -165,28 +298,34 @@ namespace Humans
         void ApplyClothes(Dictionary<string, float> weights)
         {
             if (clothRoot == null) return;
+            // Cloth_<garment>_<build tag>[_L<n>]: the worn garments in this character's build
+            var worn = new Dictionary<string, Color>();
+            foreach (var o in face.outfit)
+            {
+                if (o == null || string.IsNullOrEmpty(o.garment)) continue;
+                string p = $"Cloth_{o.garment}_{face.build}";
+                if (!PieceSet.Contains(p) && PieceSet.Contains("Cloth_" + o.garment)) p = "Cloth_" + o.garment;
+                worn[p] = o.color;
+            }
             foreach (Transform t in clothRoot)
             {
-                if (!t.name.StartsWith("Cloth_")) continue;
-                // Cloth_<garment>_<build tag>[_L<n>]: only this character's build is shown
-                var parts = BaseName(t.name).Substring(6).Split('_');
-                string g = parts[0];
-                if (parts.Length > 1 && parts[1] != face.build)
-                {
-                    if (t.gameObject.activeSelf) t.gameObject.SetActive(false);
-                    continue;
-                }
-                Color? col = null;
-                foreach (var o in face.outfit) if (o.garment == g) col = o.color;
-                bool on = col.HasValue;
+                bool on = worn.ContainsKey(BaseName(t.name));
                 if (t.gameObject.activeSelf != on) t.gameObject.SetActive(on);
-                var smr = t.GetComponent<SkinnedMeshRenderer>();
-                if (!on || smr == null) continue;
-                SetWeights(smr, weights);
-                mpb.Clear();
-                mpb.SetColor(IdColor, col.Value);
-                mpb.SetFloat(IdHide, Config.LayerHideMask(g, face.GarmentNames));
-                smr.SetPropertyBlock(mpb);
+            }
+            foreach (var kv in worn)
+            {
+                string g = kv.Key.Substring(6).Split('_')[0];
+                for (int lod = 0; lod < LodCount; lod++)
+                {
+                    var smr = Piece(kv.Key, lod, clothRoot);
+                    if (smr == null) continue;
+                    if (!smr.gameObject.activeSelf) smr.gameObject.SetActive(true);
+                    SetWeights(smr, weights);
+                    mpb.Clear();
+                    mpb.SetColor(IdColor, kv.Value);
+                    mpb.SetFloat(IdHide, Config.LayerHideMask(g, face.GarmentNames));
+                    smr.SetPropertyBlock(mpb);
+                }
             }
             // the cape's spring chain only runs while a cape (cloak slot) is worn
             var chain = GetComponent<HumanSpringChain>();
@@ -212,7 +351,7 @@ namespace Humans
             return i > 0 && i + 2 < n.Length && char.IsDigit(n[i + 2]) ? n.Substring(0, i) : n;
         }
 
-        void ApplySet(SkinnedMeshRenderer head, Transform hairRoot, float minBrows, Dictionary<string, float> weights)
+        void ApplySet(SkinnedMeshRenderer head, Transform hairRoot, float minBrows, Dictionary<string, float> weights, int lod)
         {
             head.enabled = !Config.HidesHead(face.GarmentNames);
             SetWeights(head, weights);
@@ -238,14 +377,23 @@ namespace Humans
             bool noHair = Config.HidesHair(face.GarmentNames);
             bool noFaceHair = Config.HidesFaceHair(face.GarmentNames);
             float hoodCut = Config.HoodCut(face.GarmentNames) ? 1f : 0f;
+            var want = new List<string>(3);
+            if (!noFaceHair)
+            {
+                if (!noHair && !string.IsNullOrEmpty(face.hairStyle)) want.Add("Hair_" + face.hairStyle);
+                if (!string.IsNullOrEmpty(face.beardStyle)) want.Add("Beard_" + face.beardStyle);
+                if (!string.IsNullOrEmpty(face.browStyle)) want.Add("Brows_" + face.browStyle);
+            }
             foreach (Transform t in hairRoot)
             {
-                var smr = t.GetComponent<SkinnedMeshRenderer>();
-                string n = BaseName(t.name);
-                bool on = !noFaceHair && ((n == "Hair_" + face.hairStyle && !noHair) || n == "Beard_" + face.beardStyle
-                                          || n == "Brows_" + face.browStyle);
+                bool on = want.Contains(BaseName(t.name));
                 if (t.gameObject.activeSelf != on) t.gameObject.SetActive(on);
-                if (!on || smr == null) continue;
+            }
+            foreach (var n in want)
+            {
+                var smr = Piece(n, lod, hairRoot);
+                if (smr == null) continue;
+                if (!smr.gameObject.activeSelf) smr.gameObject.SetActive(true);
                 SetWeights(smr, weights);
                 mpb.Clear();
                 if (n.StartsWith("Hair_"))
