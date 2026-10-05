@@ -489,3 +489,24 @@ To make better-looking armour:
 Budget (MStrong, whole character incl. body/head/hair): 7.4k tris at LOD2, 17.5k at LOD1. Plate LOD2:
 cuirass 491, legs 330, arms 207, helm 197, pauldrons 158, gauntlets 79.
 
+## Orcs (face presets)
+
+Orcs are the human made orcish without new body geometry (Daniel, 2026-10-04: "paint the humanoid form green and
+add tusks and pointy ears"). `src/hum_orcs.py`:
+
+- **Preset `ORC`**: face sliders as a mean and a spread each (pointed ears, heavy brow ridge, broad flat nose, wide
+  jaw and mouth, small hooded eyes; a woman's means x `fem_scale` 0.7, the ears not), green / grey-green tones,
+  yellow-to-red irises, dark or grey hair (Mohawk, Crop, Buzz, bald, Ponytail, Long), bushy brows, height 0.55-1.0
+  (x1.11-1.2, about 2 m), sex pushed to 0.85. The game adds the strong and heavy builds.
+- **Tusks** are a beard style (`hum_styles.BEARD["Tusks"]`, `tusk_parts`): two ivory cones from the corners of the
+  lower lip, rigid on the head bone, bound to the face keys like any beard; LODs 5/4 sides. `BEARD_W` gives them
+  weight 0, so random humans never roll them. Rebuild just them: `hum_orcs.build_tusks()` (then
+  `hum_export.export_hair()`, which writes only `Human_Hair.fbx`).
+- **Presets are exported** into the config (`export_config` -> `presets`; Unity `HumanFaceConfig.Preset`).
+  `HumanFaceGenerator.ApplyPreset(cfg, face, "Orc", seed)` applies one over a rolled face (sliders, tone + lip,
+  iris, blush, hair, brows, beard + its colour, height); the beard is set even on a woman (an orc's tusks).
+- Preview in Blender: `hum_orcs.lineup(head, [1, 2, 3, 4])` -> `renders/orc_lineup.png`.
+
+A new race is a new preset dict in `PRESETS` (and a beard-style feature if it needs one), re-exported config, then
+Tools > Humans > Rebuild Prefab and Showcase in Unity.
+

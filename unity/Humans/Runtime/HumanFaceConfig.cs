@@ -119,6 +119,27 @@ namespace Humans
         }
         public ArmorSet[] armorSets;
 
+        /// <summary>A look laid over a rolled face (hum_orcs: the orc): the face sliders it sets (a mean and a spread,
+        /// a woman's means scaled by femScale but the ears'), its skin tones and eyes, hair, beard and brows to pick
+        /// from, a height range and the least strength of the sex macro (HumanFaceGenerator.ApplyPreset).</summary>
+        [Serializable] public class PresetSlider { public string name; public float mean, jitter; }
+        [Serializable] public class Preset
+        {
+            public string name;
+            public PresetSlider[] sliders;
+            public float femScale = 1f;
+            public string[] tones, irises, hairStyles, hairColors, brows;
+            public string beard, beardColor;
+            public float heightMin, heightMax, sexMin, blushMin, blushMax;
+        }
+        public Preset[] presets;
+
+        public Preset FindPreset(string name)
+        {
+            if (presets != null) foreach (var p in presets) if (p.name == name) return p;
+            return null;
+        }
+
         public ArmorSet FindArmorSet(string name)
         {
             if (armorSets != null) foreach (var s in armorSets) if (s.name == name) return s;

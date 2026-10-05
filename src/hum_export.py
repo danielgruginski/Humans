@@ -108,6 +108,36 @@ def export_models():
     return a, b, c
 
 
+def export_hair():
+    """Only Human_Hair.fbx (every hair, beard and brow piece and their LODs), as export_models writes it: for a new
+    style without re-exporting the body and the clothes."""
+    head = bpy.data.objects["Head"]
+    keys = head.data.shape_keys.key_blocks
+    saved = {k.name: k.value for k in keys}
+    for k in keys:
+        k.value = 0.0
+    arm = bpy.data.objects["HumanRig"]
+    for pb in arm.pose.bones:
+        pb.location = (0, 0, 0)
+    saved_scale = tuple(arm.scale)
+    arm.scale = (1, 1, 1)
+    pieces = []
+    for cname in (hum_hair.HAIR_COL, "HUM_LOD1", "HUM_LOD2"):
+        col = bpy.data.collections.get(cname)
+        if col:
+            pieces += [o for o in col.objects if not o.name.startswith(("Head", "Body", "Cloth_"))]
+    pieces.sort(key=lambda o: o.name)
+    for o in pieces:
+        for k in (o.data.shape_keys.key_blocks if o.data.shape_keys else []):
+            k.value = 0.0
+    try:
+        return _export([arm] + pieces, os.path.join(EXPORT, "Human_Hair.fbx"))
+    finally:
+        for k in keys:
+            k.value = saved[k.name]
+        arm.scale = saved_scale
+
+
 def export_rig():
     """Rest bone heads and per-key bone deltas (Blender armature space) for the runtime skeleton."""
     sk = hum_rig.SK
@@ -174,7 +204,7 @@ def _skirt_slack(garment):
 
 
 def export_config():
-    import hum_cloak
+    import hum_cloak, hum_orcs
     F = hum_faces
     cfg = dict(
         sliders=[dict(name=n, hasNeg=neg is not None,
@@ -212,6 +242,7 @@ def export_config():
         hairStyles=[dict(name=k or "", masc=v[0], fem=v[1]) for k, v in F.HAIR_W.items()],
         beardStyles=[dict(name=k or "", w=v) for k, v in F.BEARD_W.items()],
         browStyles=[dict(name=k, masc=v[0], fem=v[1]) for k, v in F.BROW_W.items()],
+        presets=[hum_orcs.export(p) for p in hum_orcs.PRESETS],          # face presets over a rolled face (orcs)
         shader=dict(shadeMax=hum_paint.SHADE_MAX, blushTint=list(hum_material.BLUSH_TINT[:3]),
                     freckleTint=list(hum_material.FRECKLE_TINT[:3]), lipFromTone=list(hum_material.LIP_FROM_TONE),
                     edgeDark=hum_material.EDGE_DARK),

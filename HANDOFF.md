@@ -344,7 +344,18 @@ Done: head + eyes, stylisation, UVs, paint masks, preview shader, 98 keys, rando
   forced LOD1, re-dressing the player in armour, the game's silhouette tag (pieces take the body's
   renderingLayerMask); showcase lineup renders unchanged.
 
+- 2026-10-04: **orcs** (Daniel: "branch off the humanoids to build orcs ... the next threat"; look: the human painted
+  green, tusks, pointy ears, taller, more muscular; both sexes; models + a test fight). A face preset (`hum_orcs.py`,
+  README "Orcs") + the Tusks beard style, exported in the config and applied by `HumanFaceGenerator.ApplyPreset`;
+  no new body geometry, so every garment and armour set fits. In MedievalSetting: `CreatureDef.facePreset`, orc
+  warrior / brute / archer and an "orc" group, an encounter on the bandit road (Game README). Checked in play mode.
+  Renders: `renders/orc_lineup.png`; Unity `MedievalSetting/Logs/Orcs`.
+
 ## Open / next
+
+- Orcs: more of an orc look would need geometry the human lacks (a heavier jaw and brow in the mesh, lower ears,
+  broader hands); the preset is as far as sliders go. Grey hair in the Buzz cap reads as a knitted cap; brows are
+  faint on dark green skin at the game camera.
 
 - **Combat clips are work in progress** (Daniel, 2026-09-28: "the quality of the animations was not good ... the
   amplitude of the movement was wrong, and the sword swing wasn't having the blade in the direction of the cut").

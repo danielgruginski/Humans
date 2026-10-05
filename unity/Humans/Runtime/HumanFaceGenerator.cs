@@ -126,6 +126,59 @@ namespace Humans
             return f;
         }
 
+        /// <summary>Lay a preset (the config's, e.g. "Orc") over a face (port of hum_orcs.orc_face): its sliders, skin,
+        /// eyes, hair, beard, brows and height, rolled from the seed; false when the config has no such preset.</summary>
+        public static bool ApplyPreset(HumanFaceConfig cfg, HumanFaceData f, string preset, int seed)
+        {
+            var p = cfg?.FindPreset(preset);
+            if (p == null) return false;
+            var rng = new Rng(seed * 31 + 7);
+            bool masc = f.sex >= 0f;
+            f.sex = masc ? Mathf.Max(f.sex, p.sexMin) : Mathf.Min(f.sex, -p.sexMin);
+            if (p.sliders != null)
+                foreach (var s in p.sliders)
+                {
+                    float m = masc || s.name.StartsWith("Ear") ? s.mean : s.mean * p.femScale;
+                    float v = Mathf.Clamp(s.jitter > 0f ? rng.Gauss(m, s.jitter) : m, -1f, 1f);
+                    var cs = Array.Find(cfg.sliders, x => x.name == s.name);
+                    if (cs != null && !cs.hasNeg) v = Mathf.Max(0f, v);
+                    var have = f.sliders.Find(x => x.name == s.name);
+                    if (have != null) have.value = v;
+                    else f.sliders.Add(new HumanFaceData.SliderValue(s.name, v));
+                }
+            if (p.tones != null && p.tones.Length > 0)
+            {
+                var toneLin = HumanFaceConfig.Hex(p.tones[rng.Int(p.tones.Length)]).linear;
+                f.tone = toneLin.gamma;
+                f.lip = Mul(toneLin, cfg.shader.lipFromTone).gamma;
+            }
+            if (p.irises != null && p.irises.Length > 0) f.iris = HumanFaceConfig.Hex(p.irises[rng.Int(p.irises.Length)]);
+            f.blush = rng.Range(p.blushMin, p.blushMax);
+            f.freckles = 0f;
+            f.stubble = 0f;
+            if (p.hairColors != null && p.hairColors.Length > 0)
+            {
+                var c = cfg.HairColor(p.hairColors[rng.Int(p.hairColors.Length)]);
+                if (c != Color.magenta)
+                {
+                    f.hairRoot = f.hairTip = f.hairStreak = c;
+                    f.streaks = 0f; f.ombre = 0f; f.hairLook = "natural";
+                    f.browColor = (c.linear * 0.8f).gamma;
+                }
+            }
+            if (p.hairStyles != null && p.hairStyles.Length > 0) f.hairStyle = p.hairStyles[rng.Int(p.hairStyles.Length)] ?? "";
+            if (p.brows != null && p.brows.Length > 0) f.browStyle = p.brows[rng.Int(p.brows.Length)];
+            if (!string.IsNullOrEmpty(p.beard))
+            {
+                f.beardStyle = p.beard;
+                f.beardColor = HumanFaceConfig.Hex(p.beardColor);
+                f.beardShadow = 0f;
+            }
+            if (p.heightMax > p.heightMin || p.heightMax > 0f) f.height = rng.Range(p.heightMin, p.heightMax);
+            f.hairlineTint = f.hairStyle == "" || f.hairStyle == "Mohawk" ? 0f : 1f;
+            return true;
+        }
+
         /// <summary>Port of hum_faces.random_outfit. Men: shirt + trousers (+ tunic, belt); women: dress
         /// (+ apron, belt) or sometimes shirt + trousers; boots or shoes. Colours sRGB.</summary>
         public static List<HumanFaceData.GarmentColor> RandomOutfit(HumanFaceConfig cfg, Rng rng, bool masc, bool allowArmor = true)

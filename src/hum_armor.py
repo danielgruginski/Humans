@@ -549,8 +549,8 @@ def _ombre_coord(me, co, vi):
     return np.clip((top - z) / max(top - bot, 0.02), 0.0, 1.0)
 
 
-def write_cap_coords(head):
-    """Every hair/beard/brow piece gets a "CapCut" UV:
+def write_cap_coords(head, only=None):
+    """Every hair/beard/brow piece (or only the named ones) gets a "CapCut" UV:
     x = height above the cap rim (the hair shader hides what's above _CapCut while a cap is worn, 0 = none)
     y = ombre coordinate: 0 at the top of the style .. 1 at its lowest ends (by height)"""
     import bpy
@@ -560,6 +560,8 @@ def write_cap_coords(head):
         col = bpy.data.collections.get(cname)
         for ob in (col.objects if col else []):
             if ob.type != 'MESH' or not ob.name.startswith(("Hair_", "Beard_", "Brows_")):
+                continue
+            if only is not None and ob.name not in only:
                 continue
             me = ob.data
             kb = me.shape_keys.key_blocks[0] if me.shape_keys else None

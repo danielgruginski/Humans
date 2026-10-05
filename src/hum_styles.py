@@ -43,6 +43,9 @@ BEARD = {
     "ChinStrap": dict(cap=0.0035, cheeks=0.3, no_mustache=True, sideburns=True, jaw_band=0.02),
     "Mustache": dict(cap=0.0025, spacing=0.007, length=(0.026, 0.036), lift=0.0, width=0.011, thick=0.004,
                      gravity=0.15, mustache_only=True, hug=0.003),
+    # an orc's: two tusks from the corners of the lower lip (no beard shell); worn in the beard slot, so it
+    # follows the mouth and jaw keys like a beard, coloured ivory by the beard colour
+    "Tusks": dict(tusks=True, length=0.031, width=0.0085, thick=0.0115, splay=0.3, forward=0.006, sides=7, steps=6),
 }
 
 BROWS = {
@@ -172,7 +175,36 @@ def coherent_ids(P, seed=0, scale=22.0):
     return (np.argsort(np.argsort(v)) + 0.5) / len(v)
 
 
+def tusk_parts(H, st, seed=0):
+    """Two tusks rooted under the corners of the lower lip: out of the skin, up in front of the upper lip, the tips
+    turning outward. Their own shading (they are not a mass of hair)."""
+    F = H.F
+    H.domes = False
+    L = st.get("length", 0.034)
+    k = st.get("steps", 6)
+    up, fwd = np.array([0.0, 0.0, 1.0]), np.array([0.0, -1.0, 0.0])
+    spines, W, T, R = [], [], [], []
+    for sx in (1.0, -1.0):
+        p0 = np.array([sx * F.mouth_w * 0.40, F.mouth[1] - 0.006, F.mouth[2] - 0.0045])   # at the lip line
+        loc, n, _ = H.nearest_skin(p0)
+        loc, n = np.asarray(loc, float), _unit(np.asarray(n, float))
+        out = np.array([sx, 0.0, 0.0])
+        pts = []
+        for i in range(k + 1):
+            t = i / k
+            pts.append(loc - n * 0.001 + n * 0.004 * min(1.0, t * 3.0)
+                       + up * L * t + fwd * st.get("forward", 0.006) * math.sin(math.pi * 0.5 * min(1.0, t * 1.6))
+                       + out * st.get("splay", 0.3) * L * t ** 1.7)
+        spines.append(np.array(pts))
+        W.append(st["width"])
+        T.append(st["thick"])
+        R.append(0.5)
+    return [clumps_part(H, spines, W, T, R, sides=st.get("sides", 7), tex_len=0.03, smooth=0.15, tip_w=0.18)]
+
+
 def beard_parts(H, st, seed=0):
+    if st.get("tusks"):
+        return tusk_parts(H, st, seed)
     rng = np.random.default_rng(seed + 77)
     H.domes = False
     mask = lambda P: H.beard_mask(P, **st)
@@ -273,6 +305,9 @@ def lod_recipe(kind, st, lod=1):
     LOD2 (colony camera, ~40 m): even fewer/wider 3-sided clumps; beards are caps only."""
     st = dict(st)
     k = 1.9 if lod == 1 else 3.0
+    if st.get("tusks"):                           # the same tusks, rounder with fewer sides
+        st.update(sides=5 if lod == 1 else 4, steps=4 if lod == 1 else 3)
+        return st
     if kind == "brows":
         st.update(n=max(4, st["n"] // (2 if lod == 1 else 3)), width=st["width"] * (1.8 if lod == 1 else 2.6), sides=3)
         return st

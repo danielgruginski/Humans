@@ -226,7 +226,7 @@ HAIR_W = {"Buzz": (0.16, 0.03), "Crop": (0.16, 0.05), "Curly": (0.1, 0.1), "Swep
           "SidePart": (0.1, 0.1), "Long": (0.07, 0.3), "Ponytail": (0.05, 0.16), "Bun": (0.02, 0.16),
           "Mohawk": (0.04, 0.02), None: (0.1, 0.0)}
 BEARD_W = {None: 0.34, "Short": 0.1, "ShortSideburns": 0.1, "Full": 0.14, "Wizard": 0.04, "Goatee": 0.1,
-           "ChinStrap": 0.08, "Mustache": 0.12}
+           "ChinStrap": 0.08, "Mustache": 0.12, "Tusks": 0.0}     # Tusks: orcs only, never rolled for a human
 BROW_W = {"Normal": (0.45, 0.4), "Bushy": (0.3, 0.0), "Straight": (0.25, 0.1), "Thin": (0.0, 0.5)}
 DYES = {"crimson": "#8e1a22", "copper": "#b0532a", "blond": "#c9a064", "platinum": "#d8d2c4",
         "blue": "#2a4a9a", "violet": "#5e2a82", "teal": "#1f6a6a", "green": "#3c6a2a"}
