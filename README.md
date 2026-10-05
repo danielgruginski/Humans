@@ -121,7 +121,7 @@ then **Tools > Humans > Rebuild Prefab and Showcase** (renders go to `MedievalSe
   face blend shapes, skin + eye submeshes) + empty containers for the pieces (`Hair`, `HairLod1`, `HairLod2`,
   `Clothes`) + LODGroup; ~134 objects, 262 KB.
 - **Pieces are made when worn.** Every hairstyle, beard, brows and garment per build (`Hair_*`, `Beard_*`,
-  `Brows_*`, `Cloth_<Garment>_<Build>`: 398) is cut out of `Human_Hair.fbx` / `Human_Cloth_*.fbx` into a
+  `Brows_*`, `Cloth_<Garment>_<Build>`: 411) is cut out of `Human_Hair.fbx` / `Human_Cloth_*.fbx` into a
   `HumanPiece` asset in `Resources/HumanPieces` (its mesh per LOD, materials, skinning bones by name).
   `HumanFace.Apply` makes a worn piece's renderers under its container the first time it is worn (loading
   that piece only), switches taken-off ones off, and puts what it made into the LODGroup; `HumanFace.pieces`
@@ -187,7 +187,7 @@ holds through that.
   freckles, chest band (feminine by default).
 
 Unity: `Human_Body.fbx` (Humanoid, avatar from the model) carries HumanRig, Body*, Head*. Garments ship as one
-FBX per outfit family (`Human_Cloth_Clothes|Leather|PaddedMail|Cloak|Plate|Gothic|Ornate|BlackKnight.fbx`,
+FBX per outfit family (`Human_Cloth_Clothes|Leather|PaddedMail|Cloak|Robes|Plate|Gothic|Ornate|BlackKnight.fbx`,
 `hum_export.cloth_family`); HumanSetup loads every `Human_Cloth_*.fbx`, the install script drops stale ones. `Human_Hair.fbx`
 (Generic) is re-bound to the body's skeleton by bone name. `Data/HumanRigData.asset` holds the key deltas in
 model space; the Blender-to-model mapping is fitted from the rest bones, not assumed. The showcase has a
@@ -413,6 +413,35 @@ Cloak cut: a cape - over the shoulder tops, then behind the arms (they stay free
 Unity's Cloth runs per character on the CPU (too heavy for a colony of dozens), ignores the blend shapes
 the body sliders drive, and doesn't follow LOD switches. If the portrait view needs motion later, a
 cheap option is two or three spring bones down the back of the cape, or Cloth on the LOD0 cape only.
+
+### Wizard's robes (`hum_robe.py`)
+
+One cut in three colourings, worn as complete sets (Daniel, 2026-10-04: "some robes for the wizard"):
+
+| Set | Pieces | Colours (Robe / Trim) |
+|---|---|---|
+| Apprentice Robe | Trousers, Robe, RobeTrim, Shoes | undyed brown / dark brown |
+| Journeyman Robe | Trousers, Robe, RobeTrim, Boots | blue / cream |
+| Magister Robe | Trousers, Robe, RobeTrim, Boots | violet / gold |
+
+- **Robe** (wool, outer, layer 2): the shell with a round neckline 2.2 cm lower than a shirt's (`ROBE_NECK`) and
+  sleeves to the wrist widening into bells (`ROBE_BELL`, 4.5 cm more at the cuff); 4 mm off the skin at the
+  neckline, 1.1 cm further down (a centimetre's gap at the neck read as a dark ring from above). The skirt is the
+  dress's loft from the waist to 4.5 cm above the ground, on the skirt ring (`HumanSkirt`) like the dress. No rim
+  (`add_rim`): the bindings wrap its edges.
+- **RobeTrim** (a companion, group "Trim"): bindings over the hem, the cuffs and the neckline (three rows across,
+  4.5 mm off the robe, wrapped 7 mm under the edge) and a sash knotted at the front left with two ends hanging
+  down the skirt. Built on the same build's Robe (build it first); every vertex takes the weights of the Robe's
+  nearest vertex, so the hem band hangs on the ring with the skirt.
+- The neckline took the most work: the decimated shell leaves its open edges ragged, so `_straighten` smooths them
+  along themselves (a move that would fold a face over is not made), and the bindings follow the robe's own
+  vertex normals spread over two rings (`_surface`) - the nearest face's flat normal flipped along the edge and
+  the binding sank under the robe in slivers.
+- Colours ship with the sets (`SET_COLOURS` -> config `armorSets[].colours`; `HumanFaceData.SetArmorSet` takes
+  them over any palette), so a tier looks the same everywhere; `NO_RANDOM` (config `noRandom`) keeps them off
+  random people (`hum_faces.random_armor`, `HumanFaceGenerator.RandomOutfit`).
+- Tris per build, LOD0 / L1 / L2: Robe ~3.5k / 1.4k / 640, RobeTrim ~1.7k / 680 / 300. `Human_Cloth_Robes.fbx`
+  (`hum_export.export_cloth_family("Robes")` exports just this family).
 
 ### Padded and Mail sets
 

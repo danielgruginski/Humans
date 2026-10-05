@@ -52,8 +52,11 @@ def cloth_family(garment):
     import hum_armor
     import hum_cloak
     import hum_plate
+    import hum_robe
     if garment in hum_cloak.CLOAK:
         return "Cloak"
+    if garment in hum_robe.ROBE:
+        return "Robes"
     if garment in hum_armor.ARMOR:
         return "Leather" if hum_armor.ARMOR[garment]["material"] == "leather" else "PaddedMail"
     if garment in hum_plate.PLATE:
@@ -106,6 +109,25 @@ def export_models():
     if os.path.exists(old):
         os.remove(old)
     return a, b, c
+
+
+def export_cloth_family(family):
+    """Only Human_Cloth_<family>.fbx (that family's garments for every build and their LODs), as export_models writes
+    it: a new family (the robes) without re-exporting the others."""
+    import hum_cloth
+    arm = bpy.data.objects["HumanRig"]
+    for pb in arm.pose.bones:
+        pb.location = (0, 0, 0)
+    saved_scale = tuple(arm.scale)
+    arm.scale = (1, 1, 1)
+    objs = sorted((o for o in bpy.data.objects if o.name.startswith("Cloth_") and o.type == 'MESH'
+                   and cloth_family(hum_cloth.parse_cloth(o.name)[0]) == family), key=lambda o: o.name)
+    for o in objs:
+        for k in (o.data.shape_keys.key_blocks if o.data.shape_keys else []):
+            k.value = 0.0
+    path = _export([arm] + objs, os.path.join(EXPORT, f"Human_Cloth_{family}.fbx"))
+    arm.scale = saved_scale
+    return path, len(objs)
 
 
 def export_hair():
@@ -237,7 +259,11 @@ def export_config():
                      keys=[dict(key=k, w=float(v)) for k, v in b["keys"].items()])
                 for t, b in hum_builds.BUILDS.items()],
         bodyKeys=sorted(hum_builds.BODY_KEYS),
-        armorSets=[dict(name=k, pieces=v) for k, v in hum_cloth.hum_armor.ARMOR_SETS.items()],
+        # a set may carry its own colour per group (the robes' tiers) and stay off random people
+        armorSets=[dict(name=k, pieces=v,
+                        colours=[dict(name=g, hex=h) for g, h in hum_cloth.hum_robe.SET_COLOURS.get(k, {}).items()],
+                        noRandom=k in hum_cloth.hum_robe.NO_RANDOM)
+                   for k, v in hum_cloth.hum_armor.ARMOR_SETS.items()],
         metal=list(hum_material.METAL[:3]),
         hairStyles=[dict(name=k or "", masc=v[0], fem=v[1]) for k, v in F.HAIR_W.items()],
         beardStyles=[dict(name=k or "", w=v) for k, v in F.BEARD_W.items()],

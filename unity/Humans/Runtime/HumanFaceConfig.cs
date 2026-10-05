@@ -69,8 +69,22 @@ namespace Humans
             return bodyKeySet.Contains(key);
         }
 
-        /// <summary>A complete armour set: worn as a whole, it replaces the clothes.</summary>
-        [Serializable] public class ArmorSet { public string name; public string[] pieces; }
+        /// <summary>A complete armour set: worn as a whole, it replaces the clothes. A set may carry its own colour per
+        /// group (the wizard's robes: a tier looks the same in every game), which wins over any palette, and stay
+        /// off random people (noRandom).</summary>
+        [Serializable] public class ArmorSet
+        {
+            public string name; public string[] pieces;
+            public NamedColor[] colours;
+            public bool noRandom;
+
+            /// <summary>The set's own colour for a group, or null (the palettes decide).</summary>
+            public Color? Colour(string group)
+            {
+                if (colours != null) foreach (var c in colours) if (c.name == group) return Hex(c.hex);
+                return null;
+            }
+        }
         [Serializable] public class ShaderConsts { public float shadeMax; public float[] blushTint, freckleTint, lipFromTone; public float edgeDark; }
 
         public Slider[] sliders;

@@ -805,6 +805,9 @@ GARMENTS.update(hum_cloak.CLOAK)
 import hum_plate                                          # noqa: E402  (after the cloak: its hull ignores plate)
 GARMENTS.update(hum_plate.PLATE)
 hum_armor.ARMOR_SETS.update(hum_plate.PLATE_SETS)
+import hum_robe                                           # noqa: E402  (the wizards' robes; reload it before this
+GARMENTS.update(hum_robe.ROBE)                            # module, or a stale ROBE is merged)
+hum_armor.ARMOR_SETS.update(hum_robe.ROBE_SETS)
 
 
 # ------------------------------------------------------------------ objects

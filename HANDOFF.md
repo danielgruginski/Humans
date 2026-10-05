@@ -351,7 +351,22 @@ Done: head + eyes, stylisation, UVs, paint masks, preview shader, 98 keys, rando
   warrior / brute / archer and an "orc" group, an encounter on the bandit road (Game README). Checked in play mode.
   Renders: `renders/orc_lineup.png`; Unity `MedievalSetting/Logs/Orcs`.
 
+- 2026-10-05: **wizard's robes** (Daniel: "What about some robes for the wizard? Where could the player get those?
+  Maybe the wizard trainer in the second town also sells wizardry equipment?" -> "go ahead with the robes").
+  `hum_robe.py` (README "Wizard's robes"): Robe + RobeTrim on all six builds, three sets (Apprentice, Journeyman,
+  Magister) with their own colours and kept off random people (config `armorSets[].colours`, `noRandom`; C#
+  `ArmorSet.Colour`, `SetArmorSet`, the generator's filter). Only `Human_Cloth_Robes.fbx`, the config and the
+  scripts were installed in MedievalSetting (no full re-export), then Rebuild Prefab and Showcase. In the game:
+  three robe items, Old Wren sells the apprentice's, Magister Vane the others and the staves, and wears the
+  magister's (Game README). Checked in play mode: Vane in the tower, the shop rows, the player in the apprentice's
+  robe. Renders `renders/robe_*.png`, `renders/robe_unity_*.png`.
+
 ## Open / next
+
+- Robes: no hood (the first proposal had one up or down) and a sash rather than a rope belt. Looking down into
+  the neckline from close above shows a thin dark line of the robe's inside between skin and binding (any shell
+  garment's; at the game camera it reads as the collar's shadow). The shared torso/sleeve seam binding runs over
+  the shoulders as on every sleeved garment.
 
 - Orcs: more of an orc look would need geometry the human lacks (a heavier jaw and brow in the mesh, lower ears,
   broader hands); the preset is as far as sliders go. Grey hair in the Buzz cap reads as a knitted cap; brows are

@@ -205,15 +205,17 @@ namespace Humans
             }
             Add(rng.Value() < 0.6 ? "Boots" : "Shoes", Pick(cfg.leather));
             // now and then full leather armour (replaces the clothes; covers everything but the face)
-            if (allowArmor && cfg.armorLeather != null && cfg.armorSets != null && cfg.armorSets.Length > 0 && rng.Value() < (masc ? 0.3 : 0.12))
+            // (not the sets kept off random people: the wizard's robes)
+            var randomSets = cfg.armorSets == null ? null : Array.FindAll(cfg.armorSets, s => !s.noRandom);
+            if (allowArmor && cfg.armorLeather != null && randomSets != null && randomSets.Length > 0 && rng.Value() < (masc ? 0.3 : 0.12))
             {
-                var set = cfg.armorSets[rng.Int(cfg.armorSets.Length)];
+                var set = randomSets[rng.Int(randomSets.Length)];
                 var colours = new Dictionary<string, Color>();
                 o.Clear();
                 foreach (var p in set.pieces)
                 {
                     var g = cfg.ArmorGroup(p);
-                    if (!colours.TryGetValue(g, out var c)) colours[g] = c = Pick(cfg.GroupPalette(g));
+                    if (!colours.TryGetValue(g, out var c)) colours[g] = c = set.Colour(g) ?? Pick(cfg.GroupPalette(g));
                     Add(p, c);
                 }
             }

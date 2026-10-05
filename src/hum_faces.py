@@ -309,7 +309,8 @@ def random_armor(rng, o, chance=0.25):
         return o
     # a complete set replaces the clothes: one leather colour, a second for the plates over it
     import hum_armor
-    name = rng.choice(list(hum_armor.ARMOR_SETS))
+    import hum_robe
+    name = rng.choice([s for s in hum_armor.ARMOR_SETS if s not in hum_robe.NO_RANDOM])   # robes: wizards only
     colours = {g: srgb(rng.choice(p)) for g, p in ARMOUR_PALETTES.items()}
     o.clear()
     for piece in hum_armor.ARMOR_SETS[name]:

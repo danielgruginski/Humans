@@ -91,14 +91,19 @@ namespace Humans
         /// <summary>The armour set worn ("" = none): the outfit is then exactly the set's pieces.</summary>
         public string armorSet = "";
 
-        /// <summary>Put on a complete armour set (replacing all clothes); "" takes it off (plain clothes back).</summary>
+        /// <summary>Put on a complete armour set (replacing all clothes); "" takes it off (plain clothes back). A
+        /// set's own colours (the robes') win over groupColour.</summary>
         public void SetArmorSet(HumanFaceConfig cfg, string name, Func<string, Color> groupColour)
         {
             var set = cfg.FindArmorSet(name);
             outfit.Clear();
             armorSet = set != null ? name : "";
             if (set == null) return;
-            foreach (var p in set.pieces) outfit.Add(new GarmentColor(p, groupColour(cfg.ArmorGroup(p))));
+            foreach (var p in set.pieces)
+            {
+                var g = cfg.ArmorGroup(p);
+                outfit.Add(new GarmentColor(p, set.Colour(g) ?? groupColour(g)));
+            }
         }
 
         /// <summary>A set with the first colour of each group's palette (the plates take the second).</summary>
