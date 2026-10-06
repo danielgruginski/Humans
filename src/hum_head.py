@@ -15,7 +15,8 @@ import hum_mpfb
 NECK_CUT_Z = 1.40
 PAINT_GROUPS = ("lips", "ears", "scalp")          # faces fully above this plane (neutral face) make the head
 HEAD = "Head"
-EYE_SEGMENTS, EYE_RINGS = 20, 14
+EYE_SEGMENTS = 20
+EYE_THETAS = tuple(180 * i / 14 for i in range(1, 14))      # ring angles from the front pole (deg), evenly spaced
 
 # Stylisation (applied to every captured state, so it is baked into the basis and the keys):
 # MPFB's own sculpted targets for nose/mouth/jaw, plus smooth warps for eyes and cranium.
@@ -176,21 +177,26 @@ def _eye_unit():
     """Unit eyeball looking down -Y: verts, faces, and a front-projected UV (iris centre = 0.5,0.5)."""
     verts, faces = [], []
     verts.append((0, -1, 0))                                  # front pole
-    for i in range(1, EYE_RINGS):
-        th = math.pi * i / EYE_RINGS                          # 0 = front
+    for deg in EYE_THETAS:
+        th = math.radians(deg)                                # 0 = front
         for j in range(EYE_SEGMENTS):
             ph = 2 * math.pi * j / EYE_SEGMENTS
             verts.append((math.sin(th) * math.cos(ph), -math.cos(th), math.sin(th) * math.sin(ph)))
     verts.append((0, 1, 0))
+    nr = len(EYE_THETAS)
     ring = lambda i, j: 1 + (i - 1) * EYE_SEGMENTS + (j % EYE_SEGMENTS)
     for j in range(EYE_SEGMENTS):
         faces.append((0, ring(1, j + 1), ring(1, j)))
-    for i in range(1, EYE_RINGS - 1):
+    for i in range(1, nr):
         for j in range(EYE_SEGMENTS):
             faces.append((ring(i, j), ring(i, j + 1), ring(i + 1, j + 1), ring(i + 1, j)))
     last = len(verts) - 1
     for j in range(EYE_SEGMENTS):
-        faces.append((ring(EYE_RINGS - 1, j), ring(EYE_RINGS - 1, j + 1), last))
+        faces.append((ring(nr, j), ring(nr, j + 1), last))
+    # the loops above wind inward; reversed, the normals point out of the eyeball. Inward eyes look right in
+    # Blender (it draws both sides) but Unity culls their front half and shows the inside of the back half,
+    # whose front-projected UVs repeat the iris: a hollow eye that follows the camera.
+    faces = [tuple(reversed(f)) for f in faces]
     V = np.array(verts)
     return V, faces
 
@@ -203,6 +209,67 @@ def eye_verts(C, rig, side, shrink=0.96):
     q = Vector((0, -1, 0)).rotation_difference(Vector(fwd)).to_matrix()
     M = np.array(q) * (r * shrink)
     return _EYE[0] @ M.T + c
+
+
+def retemplate_eyes(ob, old_template):
+    """Swap the eyeballs of an existing head (basis and every shape key) for the current _EYE template.
+
+    In every key each eye is an affine image of the template (fitted spheres, and correctives / residuals are
+    linear combinations of those), so the affine map is fitted per key and eye from the old template and
+    applied to the new one: the blend shapes still sum exactly as before. Head verts are untouched; the eyes
+    stay the last verts (left, then right), on material 1, rigid on the 'head' group, front-projected UVs."""
+    import bmesh
+    me = ob.data
+    nh, ne_old = ob["n_head_verts"], ob["n_eye_verts"]
+    U_old = np.c_[old_template, np.ones(len(old_template))]
+    U_new = _EYE[0]
+    ne = len(U_new)
+    keys = me.shape_keys.key_blocks
+    new_co, worst = {}, 0.0
+    for k in keys:
+        a = np.zeros(len(me.vertices) * 3)
+        k.data.foreach_get("co", a)
+        a = a.reshape(-1, 3)
+        eyes = []
+        for s in range(2):
+            P = a[nh + s * ne_old: nh + (s + 1) * ne_old]
+            M, *_ = np.linalg.lstsq(U_old, P, rcond=None)      # P = [u 1] @ M
+            worst = max(worst, float(np.abs(U_old @ M - P).max()))
+            eyes.append(U_new @ M[:3] + M[3])
+        new_co[k.name] = np.vstack(eyes)
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bm.verts.ensure_lookup_table()
+    old = [bm.verts[i] for i in range(nh, nh + 2 * ne_old)]
+    # new eyes first, old ones deleted after: deleting first lets bmesh reuse the freed slots, which scrambles
+    # the new verts' order (it must stay left eye, right eye, template order)
+    shape = {k.name: bm.verts.layers.shape[k.name] for k in keys}
+    deform = bm.verts.layers.deform.verify()
+    uv = bm.loops.layers.uv.active
+    head_g = ob.vertex_groups["head"].index
+    basis = keys[0].name
+    added = []
+    for i in range(2 * ne):
+        v = bm.verts.new(new_co[basis][i])
+        for name, lay in shape.items():
+            v[lay] = new_co[name][i]
+        v[deform][head_g] = 1.0
+        added.append(v)
+    for s in range(2):
+        for f in _EYE[1]:
+            face = bm.faces.new([added[s * ne + i] for i in f])
+            face.material_index = 1
+            face.smooth = True
+            for loop, ti in zip(face.loops, f):                # loops keep the order the face was made in
+                u = U_new[ti]
+                loop[uv].uv = (0.5 + 0.5 * u[0], 0.5 + 0.5 * u[2])
+    bmesh.ops.delete(bm, geom=old, context='VERTS')
+    bm.verts.index_update()
+    bm.to_mesh(me)
+    bm.free()
+    me.update()
+    ob["n_eye_verts"] = ne
+    return worst
 
 
 def stylize_body(C, rig, s=BODY_STYLE):

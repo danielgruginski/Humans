@@ -439,20 +439,27 @@ def bake_head_masks(ob, size=SIZE):
     return ia, ib
 
 
-def eye_mask(size=256):
+IRIS_SCALE = 0.72      # iris and pupil radii x this (0.63 of the eyeball's radius filled the whole eye opening)
+
+
+def eye_mask(size=256, k=IRIS_SCALE):
     """Front-projected eyeball: R iris coverage, G pupil, B iris darkening (limbal ring + fibres),
-    A sclera brightness (darker toward the back)."""
+    A sclera brightness (darker toward the back). k scales the iris and pupil radii."""
     u = (np.arange(size) + 0.5) / size
     U, V = np.meshgrid(u, u)
     r = np.hypot(U - 0.5, V - 0.5) * 2          # 0 front pole .. 1 equator (in projected x/z)
-    iris = smoothstep(0.645, 0.61, r)
-    pupil = smoothstep(0.265, 0.235, r)
-    limbal = smoothstep(0.50, 0.63, r)
+    iris = smoothstep(0.645 * k, 0.61 * k, r)
+    pupil = smoothstep(0.265 * k, 0.235 * k, r)
+    limbal = smoothstep(0.50 * k, 0.63 * k, r)
     ang = np.arctan2(V - 0.5, U - 0.5)
-    fib = (0.5 + 0.5 * np.cos(ang * 37 + 3 * np.sin(ang * 5))) ** 2 * smoothstep(0.26, 0.45, r)
-    collar = gauss((r - 0.33) ** 2, 0.03)       # a lighter ring around the pupil
+    fib = (0.5 + 0.5 * np.cos(ang * 37 + 3 * np.sin(ang * 5))) ** 2 * smoothstep(0.26 * k, 0.45 * k, r)
+    collar = gauss((r - 0.33 * k) ** 2, 0.03 * k)      # a lighter ring around the pupil
     dark = np.clip(0.75 * limbal + 0.3 * fib - 0.35 * collar, 0, 1)
     sclera = 1 - 0.35 * smoothstep(0.7, 1.0, r)
+    # the lids shade the eyeball: darker toward the top (upper lid) and a little toward the bottom; without it
+    # the white reads flat and pasted on. Projected z (eye up) = 2v - 1.
+    z = (V - 0.5) * 2
+    sclera = sclera * (1 - 0.30 * smoothstep(0.10, 0.70, z) - 0.12 * smoothstep(0.30, 0.85, -z))
     M = np.stack([iris, pupil, dark, sclera], -1)
     return save_image("T_Eye_Mask", M, os.path.join(TEX_DIR, "T_Eye_Mask.png"))
 

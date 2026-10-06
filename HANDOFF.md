@@ -88,6 +88,14 @@
 
 - `mesh.materials.clear()` resets every face to slot 0. Use `hum_paint.set_materials` (replaces slots in place).
   Before this fix, the eyeball UV disc was baked over the face island.
+- Eyeballs (fixed 2026-10-06): `_eye_unit` used to wind inward. Blender draws both sides, so it looked fine there,
+  but Unity culled the eyes' front half and drew the inside of the back half, whose front-projected UVs repeat the
+  iris: a hollow eye that "followed the camera", dark specks, and no eyes at all on orcs. Faces now wind outward.
+  The shipped head was patched in place (`hum_head.retemplate_eyes`: the eyes are an affine image of the template in
+  every key, so the map is fitted per key and applied to a new template, keys stay exact). Don't make the template
+  much denser: Unity's area-and-angle weighted normals broke on tiny triangles round the front pole (a 4-degree first
+  ring flipped the pupil normals). `hum_paint.IRIS_SCALE` 0.72 (the iris filled the opening once the real front
+  showed) and the sclera is shaded toward the lids.
 - Eyeball UVs are a front projection that overlaps the head UV square. They must stay on material slot 1,
   which the bakes skip.
 - MPFB macros move the whole head (height). Keys are anchored at the neck ring (`rig.neck_ref`).
@@ -427,7 +435,7 @@ Done: head + eyes, stylisation, UVs, paint masks, preview shader, 98 keys, rando
 - LODs done (README): at the colony camera a head with hair and beard is at most ~1.9k tris.
   Human_Hair.fbx is 61 MB (LOD0 pieces dominate).
 - Unity: blend-shape bounds are the base mesh's (re-check with extreme sliders).
-- One eye white showed dark specks in a Unity close-up (creator_34): not investigated yet.
+- Eyes fixed 2026-10-06 (see Conventions, "Eyeballs"): the specks were the inside of the back of the eyeball.
 - No jaw or eye bones yet (talking and blinking need them, or keys driven from MPFB expressions).
 - Painted underclothes (shorts, chest band) still show where no garment covers them (by design).
 - In-game head (~2k tris) with the same keys (Surface Deform transfer), and fewer eye segments.
