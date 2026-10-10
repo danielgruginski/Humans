@@ -329,6 +329,8 @@ namespace Humans
             if (g?.slot == "cloak" && Cfg.cloaks != null) return Cfg.cloaks;
             if (g?.layer >= 3 && g.material == "leather" && Cfg.armorLeather != null) return Cfg.armorLeather;
             if (g?.material == "leather") return Cfg.leather;
+            if (g?.material == "fur" && Cfg.fur != null) return Cfg.fur;
+            if (g?.group == "OrcIron" && Cfg.orcIron != null) return Cfg.orcIron;
             var all = new List<string>(Cfg.linen);
             all.AddRange(Cfg.wool);
             return all.ToArray();
@@ -350,7 +352,7 @@ namespace Humans
                 cur = Cfg.FindBuild(f.build);
             }
             var names = new List<string>();
-            foreach (var b in Cfg.builds) if (b.sex == cur.sex) names.Add(b.name);
+            foreach (var b in Cfg.builds) if (b.sex == cur.sex && (b.odds > 0f || b == cur)) names.Add(b.name);   // not a race's own
             string n = cur.name;
             if (Cycle("Build", ref n, names))
             {

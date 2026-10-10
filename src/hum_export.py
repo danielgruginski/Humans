@@ -53,6 +53,9 @@ def cloth_family(garment):
     import hum_cloak
     import hum_plate
     import hum_robe
+    import hum_orcgear
+    if garment in hum_orcgear.ORC:                     # the orcs' gear: its own file (fur, hide, crude iron)
+        return "Orc"
     if garment in hum_cloak.CLOAK:
         return "Cloak"
     if garment in hum_robe.ROBE:
@@ -229,7 +232,7 @@ def export_config():
     import hum_cloak, hum_orcs
     F = hum_faces
     cfg = dict(
-        sliders=[dict(name=n, hasNeg=neg is not None,
+        sliders=[dict(name=n, hasNeg=neg is not None, presetOnly=n in F.PRESET_ONLY,
                       spread=F.SPREAD.get(n, 1.0), femBias=F.FEM_BIAS.get(n, 0.0), mascBias=F.MASC_BIAS.get(n, 0.0))
                  for n, pos, neg in F.SLIDERS],
         macros=list(F.MACROS.keys()),
@@ -255,6 +258,7 @@ def export_config():
         regions=hum_cloth.REGIONS,
         linen=F.LINEN, wool=F.WOOL, leather=F.LEATHER, armorLeather=F.ARMOR_LEATHER,
         cloaks=F.CLOAKS, padding=F.PADDING, steel=F.STEEL, blackened=F.BLACKENED, suit=F.SUIT,
+        fur=F.FUR, orcIron=F.ORC_IRON,
         builds=[dict(tag=t, sex=b["sex"], name=b["name"], odds=hum_builds.BUILD_ODDS[b["name"]],
                      keys=[dict(key=k, w=float(v)) for k, v in b["keys"].items()])
                 for t, b in hum_builds.BUILDS.items()],

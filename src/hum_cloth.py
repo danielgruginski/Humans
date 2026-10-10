@@ -808,6 +808,10 @@ hum_armor.ARMOR_SETS.update(hum_plate.PLATE_SETS)
 import hum_robe                                           # noqa: E402  (the wizards' robes; reload it before this
 GARMENTS.update(hum_robe.ROBE)                            # module, or a stale ROBE is merged)
 hum_armor.ARMOR_SETS.update(hum_robe.ROBE_SETS)
+import hum_orcgear                                        # noqa: E402  (the orcs' gear: plate machinery; reload it
+GARMENTS.update(hum_orcgear.ORC)                          # before this module, like hum_robe)
+hum_armor.ARMOR_SETS.update(hum_orcgear.ORC_SETS)
+hum_robe.NO_RANDOM.update(hum_orcgear.ORC_SETS)           # the orcs' own: never on random people
 
 
 # ------------------------------------------------------------------ objects
@@ -835,9 +839,12 @@ def garment_material(kind):
     shared by every garment."""
     import hum_material
     name = {"leather": "M_HumanLeather", "quilt": "M_HumanQuilt", "mail": "M_HumanMail",
-            "plate": "M_HumanPlate"}.get(kind, "M_HumanCloth")
+            "plate": "M_HumanPlate", "fur": "M_HumanFur"}.get(kind, "M_HumanCloth")
     if name in bpy.data.materials:
         return bpy.data.materials[name]
+    if kind == "fur":                                     # the orcs' mantles: tufted strands (hum_paint.fur_texture)
+        tex = bpy.data.images.get("T_Cloth_Fur") or hum_paint.fur_texture()
+        return hum_material.cloth_material(tex, name, roughness=0.95)
     if kind == "plate":
         tex = bpy.data.images.get("T_Plate_Steel") or hum_paint.plate_texture()
         return hum_material.plate_material(tex, name)

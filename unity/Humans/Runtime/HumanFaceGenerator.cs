@@ -33,6 +33,7 @@ namespace Humans
             f.sliders.Clear();
             foreach (var s in cfg.sliders)
             {
+                if (s.presetOnly) { f.sliders.Add(new HumanFaceData.SliderValue(s.name, 0f)); continue; }   // no draw: faces stay
                 float bias = (masc ? s.mascBias : s.femBias) + (s.name == "MouthCorners" ? 0.25f : 0f);
                 float v = rng.Gauss(bias * sex, 0.3f) * s.spread;
                 if (s.name.StartsWith("Face") && !s.hasNeg && Array.IndexOf(FaceShapes, s.name) >= 0)
@@ -118,7 +119,7 @@ namespace Humans
             if (cfg.builds != null && cfg.builds.Length > 0)
             {
                 var opts = new List<(string, float)>();
-                foreach (var b in cfg.builds) if (b.sex == (masc ? "M" : "F")) opts.Add((b.tag, b.odds));
+                foreach (var b in cfg.builds) if (b.sex == (masc ? "M" : "F") && b.odds > 0f) opts.Add((b.tag, b.odds));   // not a race's own
                 if (opts.Count > 0) f.build = rng.Weighted(opts);
             }
             f.armorSet = cfg.WornArmorSet(f);
@@ -135,6 +136,8 @@ namespace Humans
             var rng = new Rng(seed * 31 + 7);
             bool masc = f.sex >= 0f;
             f.sex = masc ? Mathf.Max(f.sex, p.sexMin) : Mathf.Min(f.sex, -p.sexMin);
+            if (!string.IsNullOrEmpty(p.build) && cfg.FindBuild((masc ? "M" : "F") + p.build) != null)
+                f.build = (masc ? "M" : "F") + p.build;                         // the preset's own body (the orcs')
             if (p.sliders != null)
                 foreach (var s in p.sliders)
                 {

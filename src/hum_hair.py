@@ -625,6 +625,77 @@ def bake_skin_hair_mask(head, size=1024):
     return hum_paint.save_image("T_Head_MaskC", M, os.path.join(hum_paint.TEX_DIR, "T_Head_MaskC.png"))
 
 
+def bind_more_keys(ob, target, names, eps=1e-5):
+    """Add these of target's keys to ob (bound like bind_keys: Surface Deform at rest), keeping ob's other keys,
+    weights and modifiers: for keys added to the head or body after the pieces were bound (hum_orcs).
+    Returns the names added (a key that doesn't move the piece is skipped, or removed if ob had it)."""
+    tk = target.data.shape_keys.key_blocks
+    names = [n for n in names if tk.get(n) is not None]
+    if not names:
+        return []
+    saved_t = {k.name: k.value for k in tk}
+    for k in tk:
+        k.value = 0.0
+    if ob.data.shape_keys:
+        for k in ob.data.shape_keys.key_blocks:
+            k.value = 0.0
+    mods = [(m, m.show_viewport) for m in ob.modifiers]
+    for m, _ in mods:
+        m.show_viewport = False
+    mod = ob.modifiers.new("HeadBindMore", 'SURFACE_DEFORM')
+    mod.target = target
+    mod.falloff = 4.0
+    hidden = ob.hide_get()
+    ob.hide_set(False)
+    added = []
+    try:
+        with bpy.context.temp_override(object=ob, active_object=ob, selected_objects=[ob]):
+            bpy.ops.object.surfacedeform_bind(modifier=mod.name)
+        if not mod.is_bound:
+            raise RuntimeError(f"surface deform bind failed for {ob.name}")
+        n = len(ob.data.vertices)
+        base = np.empty(n * 3, np.float32)
+        (ob.data.shape_keys.key_blocks[0].data if ob.data.shape_keys else ob.data.vertices).foreach_get("co", base)
+
+        def evaluated():
+            dg = bpy.context.evaluated_depsgraph_get()
+            dg.update()
+            ev = ob.evaluated_get(dg)
+            me = ev.to_mesh()
+            out = np.empty(len(me.vertices) * 3, np.float32)
+            me.vertices.foreach_get("co", out)
+            ev.to_mesh_clear()
+            return out
+
+        rest = evaluated()
+        got = {}
+        for name in names:
+            tk[name].value = 1.0
+            d = evaluated() - rest
+            tk[name].value = 0.0
+            got[name] = d
+    finally:
+        ob.modifiers.remove(mod)
+        for m, v in mods:
+            m.show_viewport = v
+        ob.hide_set(hidden)
+        for k, v in saved_t.items():
+            tk[k].value = v
+    if ob.data.shape_keys is None:
+        ob.shape_key_add(name="Basis", from_mix=False)
+    okb = ob.data.shape_keys.key_blocks
+    for name, d in got.items():
+        if np.abs(d).max() <= eps:
+            if okb.get(name) is not None:
+                ob.shape_key_remove(okb[name])
+            continue
+        k = okb.get(name) or ob.shape_key_add(name=name, from_mix=False)
+        k.data.foreach_set("co", base + d)
+        k.slider_min = 0.0
+        added.append(name)
+    return added
+
+
 def bind_keys_nearest(ob, target, eps=1e-5, faces=None, verts=None, merge=False):
     """Nearest-point binding (Surface Deform can refuse some meshes): every vertex takes the key deltas of
     its nearest point on the target (inverse-distance over that face's corners), translation only.
@@ -704,7 +775,7 @@ def hair_weights(ob, sk, arm):
     return W
 
 
-def smooth_keys_spatial(ob, radius=0.02):
+def smooth_keys_spatial(ob, radius=0.02, names=None):
     """Blur every shape key's offsets over space (Gaussian, `radius`): neighbouring clumps move together.
     The keys come from a Surface Deform bind to the head; hair hanging below the skull binds to the neck
     edge of the head mesh, which some keys (neck width, feminine) move unlike the skull, tearing a gap
@@ -728,6 +799,8 @@ def smooth_keys_spatial(ob, radius=0.02):
     rows, cols, ws = np.array(rows), np.array(cols), np.array(ws)
     norm = np.bincount(rows, weights=ws, minlength=len(base))
     for k in kb[1:]:
+        if names is not None and k.name not in names:
+            continue
         D = np.array([d.co[:] for d in k.data]) - base
         S = np.zeros_like(D)
         for c in range(3):

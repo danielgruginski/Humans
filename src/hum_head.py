@@ -282,14 +282,18 @@ def stylize_body(C, rig, s=BODY_STYLE):
     return C
 
 
-def full_coords(src, rig, macros=None, race=None, targets=None, style=STYLE, body_style=BODY_STYLE):
+def full_coords(src, rig, macros=None, race=None, targets=None, style=STYLE, body_style=BODY_STYLE, deform=None):
     """All MPFB vertices (incl. joint helpers) for one state: face stylisation, body stylisation,
-    feet on the ground (the skeleton carries height changes; keys are residuals, see hum_rig)."""
+    feet on the ground (the skeleton carries height changes; keys are residuals, see hum_rig).
+    deform: C -> C, a shape of our own on top (hum_faces.DEFORMS: the orcs' forearms and hands); the joint
+    helpers move with it, so the skeleton follows."""
     t = dict(style["targets"])
     for k, v in (targets or {}).items():
         t[k] = t.get(k, 0.0) + v
     C = stylize(hum_mpfb.capture(src, macros, race, t), rig, style)
     C = stylize_body(C, rig, body_style)
+    if deform is not None:
+        C = deform(C)
     C[:, 2] -= rig.centre(C, "joint-ground")[2]
     return C
 

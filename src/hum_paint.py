@@ -536,6 +536,25 @@ def armour_textures(size=256, seed=13):
     return bpy.data.images["T_Cloth_Quilt"], bpy.data.images["T_Cloth_Mail"]
 
 
+def fur_texture(size=256, seed=19):
+    """T_Cloth_Fur (2026-10-10, the orcs' mantles): tufts of strands, mostly along V (down the garment), in clumps
+    with dark gaps between them - grey, tiling, like the other cloth patterns."""
+    rng = np.random.default_rng(seed)
+    u = (np.arange(size) + 0.5) / size
+    U, V = np.meshgrid(u, u)
+    strands = np.zeros_like(U)
+    for f in (23, 37, 61, 97):                         # fine strands across U, wavering down V
+        strands += np.sin(2 * np.pi * (U * f + 0.15 * np.sin(2 * np.pi * (V * 3 + rng.random())) + rng.random())) / f ** 0.5
+    strands = (strands - strands.min()) / (strands.max() - strands.min())
+    clump = np.zeros_like(U)                           # tufts: irregular blotches (whole-number directions: tiling)
+    for a, b in ((3, 1), (1, 4), (-2, 3), (4, -1), (2, 5), (-5, 2), (1, -3), (5, 3)):
+        clump += np.sin(2 * np.pi * (U * a + V * b + rng.random())) / math.hypot(a, b) ** 0.5
+    clump = (clump - clump.min()) / (clump.max() - clump.min())
+    T = np.clip(0.35 + 0.45 * strands ** 1.2 + 0.35 * clump - 0.1 * (1 - clump) ** 3, 0, 1)
+    save_image("T_Cloth_Fur", np.stack([T, T, T, np.ones_like(T)], -1), os.path.join(TEX_DIR, "T_Cloth_Fur.png"))
+    return bpy.data.images["T_Cloth_Fur"]
+
+
 def plate_texture(size=256, seed=17):
     """T_Plate_Steel: hammered, brushed steel (grey, tiling; the plate shader projects it in 3D from the rest
     position): soft dents from the planishing hammer, faint brushing streaks, a little mottling."""

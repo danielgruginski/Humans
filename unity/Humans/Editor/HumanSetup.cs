@@ -131,7 +131,7 @@ namespace Humans.EditorTools
             }
         }
 
-        struct Mats { public Material skin, eye, hair, body, cloth, leather, quilt, mail, plate; }
+        struct Mats { public Material skin, eye, hair, body, cloth, leather, quilt, mail, plate, fur, plateRough; }
 
         static Mats BuildMaterials()
         {
@@ -157,6 +157,8 @@ namespace Humans.EditorTools
                 quilt = Make("M_HumanQuilt", "Humans/Cloth"),
                 mail = Make("M_HumanMail", "Humans/Cloth"),
                 plate = Make("M_HumanPlate", "Humans/Plate"),
+                fur = Make("M_HumanFur", "Humans/Cloth"),                 // the orcs' mantles (T_Cloth_Fur)
+                plateRough = Make("M_HumanPlateRough", "Humans/Plate"),   // the orcs' hammered dark iron (group OrcIron)
             };
             mats.plate.SetTexture("_Pattern", Tex("T_Plate_Steel"));
             mats.plate.SetTexture("_Ornament", AssetDatabase.LoadAssetAtPath<Texture2DArray>($"{Textures}/T_Plate_Ornament.png"));
@@ -164,6 +166,16 @@ namespace Humans.EditorTools
             mats.plate.SetFloat("_OrnTile", 1.0f);
             mats.plate.SetVector("_OrnTiles", new Vector4(1f, 0.5f, 1f, 1f));   // acanthus, damask (2x larger)
             mats.plate.SetFloat("_PolishSmoothness", 0.8f);
+            mats.plate.SetFloat("_Metallic", 1f);
+            mats.plateRough.SetTexture("_Pattern", Tex("T_Plate_Steel"));
+            mats.plateRough.SetTexture("_Ornament", AssetDatabase.LoadAssetAtPath<Texture2DArray>($"{Textures}/T_Plate_Ornament.png"));
+            mats.plateRough.SetFloat("_Smoothness", 0.32f);
+            mats.plateRough.SetFloat("_Metallic", 0.55f);               // dull iron: at full metal and rough it read black
+            mats.plateRough.SetFloat("_OrnTile", 1.0f);
+            mats.plateRough.SetVector("_OrnTiles", new Vector4(1f, 0.5f, 1f, 1f));
+            mats.plateRough.SetFloat("_PolishSmoothness", 0.4f);
+            mats.fur.SetTexture("_Pattern", Tex("T_Cloth_Fur"));
+            mats.fur.SetFloat("_Smoothness", 0.04f);
             mats.cloth.SetTexture("_Pattern", Tex("T_Cloth_Weave"));
             mats.cloth.SetFloat("_Smoothness", 0.12f);
             mats.leather.SetTexture("_Pattern", Tex("T_Cloth_Leather"));
@@ -174,7 +186,7 @@ namespace Humans.EditorTools
             mats.mail.SetFloat("_Smoothness", 0.42f);
             mats.mail.SetFloat("_Triplanar", 1f);
             mats.mail.SetFloat("_TriTile", 0.24f);                 // 24 rings per tile: 1 cm rings
-            foreach (var m in new[] { mats.cloth, mats.leather, mats.quilt, mats.mail }) m.SetColor("_Metal", new Color(0.68f, 0.68f, 0.7f));
+            foreach (var m in new[] { mats.cloth, mats.leather, mats.quilt, mats.mail, mats.fur }) m.SetColor("_Metal", new Color(0.68f, 0.68f, 0.7f));
             mats.skin.SetTexture("_MaskA", Tex("T_Head_MaskA"));
             mats.skin.SetTexture("_MaskB", Tex("T_Head_MaskB"));
             mats.skin.SetTexture("_MaskC", Tex("T_Head_MaskC"));
@@ -184,7 +196,8 @@ namespace Humans.EditorTools
             mats.body.SetTexture("_MaskA", Tex("T_Body_MaskA"));
             mats.body.SetTexture("_MaskB", Tex("T_Body_MaskB"));
             mats.body.SetTexture("_SuitPattern", Tex("T_Cloth_Weave"));
-            foreach (var m in new[] { mats.skin, mats.eye, mats.hair, mats.body, mats.cloth, mats.leather, mats.quilt, mats.mail, mats.plate }) EditorUtility.SetDirty(m);
+            foreach (var m in new[] { mats.skin, mats.eye, mats.hair, mats.body, mats.cloth, mats.leather, mats.quilt, mats.mail, mats.plate,
+                                      mats.fur, mats.plateRough }) EditorUtility.SetDirty(m);
             AssetDatabase.SaveAssets();
             return mats;
         }
@@ -571,8 +584,9 @@ namespace Humans.EditorTools
                 {
                     string g = smr.name.Substring("Cloth_".Length).Split('_')[0];      // Cloth_<G>_<build>[_L<n>]
                     var kind = cfg.FindGarment(g)?.material;
+                    bool rough = cfg.FindGarment(g)?.group == "OrcIron";
                     var mat = kind == "leather" ? mats.leather : kind == "quilt" ? mats.quilt : kind == "mail" ? mats.mail
-                            : kind == "plate" ? mats.plate : mats.cloth;
+                            : kind == "plate" ? (rough ? mats.plateRough : mats.plate) : kind == "fur" ? mats.fur : mats.cloth;
                     Cut(smr, Enumerable.Repeat(mat, smr.sharedMesh.subMeshCount).ToArray());
                 }
                 Object.DestroyImmediate(cloth);

@@ -11,7 +11,8 @@ namespace Humans
     [Serializable]
     public class HumanFaceConfig
     {
-        [Serializable] public class Slider { public string name; public bool hasNeg; public float spread = 1, femBias, mascBias; }
+        /// <summary>presetOnly: a preset's alone (the orcs' jaw, brow and body shapes): random faces never roll it.</summary>
+        [Serializable] public class Slider { public string name; public bool hasNeg, presetOnly; public float spread = 1, femBias, mascBias; }
         [Serializable] public class Corrective { public string name, a, b; }
         [Serializable] public class NamedColor { public string name, hex; }
         [Serializable] public class SexWeighted { public string name; public float masc, fem; }
@@ -99,6 +100,7 @@ namespace Humans
         public ShaderConsts shader;
         public Garment[] garments;
         public string[] linen, wool, leather, armorLeather, cloaks, padding, steel, blackened, suit;   // palettes (sRGB hex)
+        public string[] fur, orcIron;                                   // the orcs' mantles and their dark iron (hum_orcgear)
 
         /// <summary>Colour group of an armour-set piece (one colour per group): Leather, Plates (leather
         /// plates), Padding, Steel (mail and plate armour), Boots or Cloth.</summary>
@@ -112,6 +114,7 @@ namespace Humans
             {
                 case "leather": return "Leather";
                 case "quilt": return "Padding";
+                case "fur": return "Fur";
                 case "mail":
                 case "plate": return "Steel";
                 default: return "Cloth";
@@ -126,6 +129,8 @@ namespace Humans
                 case "Padding": return padding ?? linen;
                 case "Steel": return steel ?? wool;
                 case "Blackened": return blackened ?? steel ?? wool;
+                case "Fur": return fur ?? leather;
+                case "OrcIron": return orcIron ?? blackened ?? steel ?? wool;
                 case "Suit": return suit ?? wool;
                 case "Cloth": return wool;
                 default: return armorLeather;
@@ -135,7 +140,8 @@ namespace Humans
 
         /// <summary>A look laid over a rolled face (hum_orcs: the orc): the face sliders it sets (a mean and a spread,
         /// a woman's means scaled by femScale but the ears'), its skin tones and eyes, hair, beard and brows to pick
-        /// from, a height range and the least strength of the sex macro (HumanFaceGenerator.ApplyPreset).</summary>
+        /// from, a height range and the least strength of the sex macro (HumanFaceGenerator.ApplyPreset); build: its own
+        /// body build ("Orc": the face's sex + this names the build, e.g. MOrc), else the face keeps its own.</summary>
         [Serializable] public class PresetSlider { public string name; public float mean, jitter; }
         [Serializable] public class Preset
         {
@@ -143,7 +149,7 @@ namespace Humans
             public PresetSlider[] sliders;
             public float femScale = 1f;
             public string[] tones, irises, hairStyles, hairColors, brows;
-            public string beard, beardColor;
+            public string beard, beardColor, build;
             public float heightMin, heightMax, sexMin, blushMin, blushMax;
         }
         public Preset[] presets;

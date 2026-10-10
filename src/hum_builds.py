@@ -23,7 +23,7 @@ import hum_faces as F
 import hum_paint
 import hum_rig
 
-BUILD_NAMES = ["Slim", "Strong", "Heavy"]
+BUILD_NAMES = ["Slim", "Strong", "Heavy", "Orc"]
 BODY_KEYS = ({"Masculine", "Feminine", "Heavy", "Thin", "Muscular", "Slight"}
              | {f"{s}_{d}" for s in F.BODY_SLIDERS + ["NeckWidth"] for d in ("Pos", "Neg")})
 
@@ -40,6 +40,21 @@ _SHAPE = {
                           ChestMuscle_Pos=0.25, BackMuscle_Pos=0.4, VShape_Pos=0.25, NeckWidth_Pos=0.1),
     ("M", "Heavy"): dict(Heavy=0.8, Belly_Pos=0.5, NeckWidth_Pos=0.35),
     ("F", "Heavy"): dict(Heavy=0.75, Belly_Pos=0.35, Hips_Pos=0.4, Waist_Neg=0.0),
+    # 2026-10-10: the orcs' own builds (hum_orcs; never rolled for a human, BUILD_ODDS 0): the Strong build
+    # pushed further, with what only they have - a thick neck carried forward, big upper arms, swollen
+    # forearms, big hands, a deep chest and shorter legs
+    ("M", "Orc"): dict(Muscular=1.0, Heavy=0.35, ArmMuscle_Pos=0.9, ShoulderMuscle_Pos=1.0, LegMuscle_Pos=0.6,
+                       ChestMuscle_Pos=0.7, BackMuscle_Pos=1.0, VShape_Pos=0.5, ShoulderWidth_Pos=1.0,
+                       NeckWidth_Pos=1.0, NeckThick_Pos=1.0, NeckForward_Pos=0.7, NeckLength_Neg=0.7, Traps_Pos=1.0,
+                       UpperArmSize_Pos=0.8, ForearmSize_Pos=1.0, HandSize_Pos=1.0, TorsoDepth_Pos=0.45,
+                       ChestWide_Pos=0.5, LegLength_Neg=0.35, Belly_Pos=0.15, ArmsOut_Pos=1.0,
+                       ArmBulk_Pos=1.0),
+    ("F", "Orc"): dict(Muscular=0.85, Heavy=0.2, ArmMuscle_Pos=0.65, ShoulderMuscle_Pos=0.7, LegMuscle_Pos=0.5,
+                       ChestMuscle_Pos=0.25, BackMuscle_Pos=0.7, VShape_Pos=0.3, ShoulderWidth_Neg=0.0,
+                       ShoulderWidth_Pos=0.4, NeckWidth_Pos=0.5, NeckThick_Pos=0.6, NeckForward_Pos=0.5,
+                       NeckLength_Neg=0.45, Traps_Pos=0.6, UpperArmSize_Pos=0.5, ForearmSize_Pos=0.75,
+                       HandSize_Pos=0.75, TorsoDepth_Pos=0.25, ChestWide_Pos=0.25, LegLength_Neg=0.25,
+                       ArmsOut_Pos=0.55, ArmBulk_Pos=0.6),
 }
 BUILDS = {}
 for _sex in "MF":
@@ -47,7 +62,7 @@ for _sex in "MF":
         _k = dict(_BASE[_sex])
         _k.update(_SHAPE[(_sex, _name)])
         BUILDS[_sex + _name] = dict(sex=_sex, name=_name, keys={k: v for k, v in _k.items() if v > 0})
-BUILD_ODDS = {"Slim": 0.4, "Strong": 0.3, "Heavy": 0.3}
+BUILD_ODDS = {"Slim": 0.4, "Strong": 0.3, "Heavy": 0.3, "Orc": 0.0}
 
 
 def tag_of(masc, name):

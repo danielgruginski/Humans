@@ -19,6 +19,7 @@ Shader "Humans/Plate"
         _Smoothness ("Smoothness", Range(0, 1)) = 0.5
         _PolishSmoothness ("Polished edge smoothness", Range(0, 1)) = 0.82
         _Polish ("Polished edge brightening", Range(0, 1)) = 0.25
+        _Metallic ("Metallic (dull iron less: rough metal reads black)", Range(0, 1)) = 1
         _Trim ("Trim (brass)", Color) = (0.78, 0.6, 0.3, 1)
         _Strap ("Straps (leather)", Color) = (0.2, 0.12, 0.07, 1)
         _Hide ("Hidden regions (bit mask)", Float) = 0
@@ -60,7 +61,7 @@ Shader "Humans/Plate"
             CBUFFER_START(UnityPerMaterial)
                 float4 _Pattern_ST;
                 half4 _Color, _Trim, _Strap, _Inlay;
-                half _Smoothness, _PolishSmoothness, _Polish;
+                half _Smoothness, _PolishSmoothness, _Polish, _Metallic;
                 float _Hide, _TriTile, _OrnTile, _OrnRelief;
                 float4 _OrnTiles;
             CBUFFER_END
@@ -104,7 +105,7 @@ Shader "Humans/Plate"
                 steel *= lerp(1.0, lerp(0.55, 1.1, smoothstep(0.25, 0.6, hraw)), etch);
                 half3 col = lerp(steel, _Trim.rgb * lerp(0.85, 1.0, pat), trim);
                 col = lerp(col, _Strap.rgb * lerp(0.8, 1.0, pat), strap);
-                half metallic = 1 - strap;
+                half metallic = (1 - strap) * _Metallic;
                 half smooth = lerp(_Smoothness * lerp(0.85, 1.0, pat), _PolishSmoothness, max(polish, inlay * 0.6));
                 smooth = lerp(smooth, 0.3, strap);
                 return HumanShadePBR(i, col, metallic, smooth, lerp(0.35, 1.0, ao));

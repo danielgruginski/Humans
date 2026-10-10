@@ -73,6 +73,15 @@
 - Corrective keys combine as `ab - a - b + 2*base` (for vertices *and* joints). With `+base` once, the
   rest shape still matched, but the corrective moved the skeleton 1.4 m.
 - MPFB height 1.0 is a 2.3 m giant; height is handled as a uniform scale instead of a key.
+- Keys added after the build (the orcs') go through `hum_faces.add_keys` + `hum_orcs.propagate_keys`, never
+  `add_shape_keys` (it clears every key). New sliders are appended to `SLIDERS` and marked `PRESET_ONLY` unless
+  every human should roll them: a rolled slider is a random draw, and a new draw shifts every seeded face after it
+  (the game's named NPCs would all change). The C# generator skips `presetOnly` sliders the same way.
+- `hum_orcgear` sets `hum_plate.STYLES["Orc"]` when imported: reloading hum_plate drops it, so reload hum_orcgear (and
+  then hum_cloth) after hum_plate; its builds hold the style object (`hum_orcgear.STYLE`), not a lookup.
+- `HumanRig` carries the Hum_Idle action: a preview poses the arms down (not the A pose) until it is cleared.
+- Saving after many garment rebuilds printed "Shapekey ... has an invalid 'from' pointer, it will be deleted": the
+  replaced garments' orphaned key blocks, dropped on save (harmless).
 
 - EEVEE misreads Attribute(OBJECT) values when a material reads many object properties (11 broke the lips):
   scalars are packed into `hum_amt1..3` vectors (`hum_material.set_props` does it).
@@ -376,9 +385,12 @@ Done: head + eyes, stylisation, UVs, paint masks, preview shader, 98 keys, rando
   garment's; at the game camera it reads as the collar's shadow). The shared torso/sleeve seam binding runs over
   the shoulders as on every sleeved garment.
 
-- Orcs: more of an orc look would need geometry the human lacks (a heavier jaw and brow in the mesh, lower ears,
-  broader hands); the preset is as far as sliders go. Grey hair in the Buzz cap reads as a knitted cap; brows are
-  faint on dark green skin at the game camera.
+- Orcs (2026-10-10, Daniel: "what about working on the orcs in blender?"): the Orc builds and shapes are done
+  (README "Orcs"); the orc gear too ("go ahead with the orc armour": README "Orc gear", `hum_orcgear`), installed and
+  worn by the game's orcs. Next on the list: crude orc weapons and the horn-blower's war horn in the Weapons kit.
+  Open: no asymmetric pauldron (one big spiked one); the mantle can't go over a breastplate (it would need to stand
+  off what is worn under it, like the plates' `_under`); orc gear exists for the Orc builds only. Grey hair in the Buzz cap reads as a
+  knitted cap; brows are faint on dark green skin at the game camera. Orcs use the humans' clips (no stoop).
 
 - **Combat clips are work in progress** (Daniel, 2026-09-28: "the quality of the animations was not good ... the
   amplitude of the movement was wrong, and the sword swing wasn't having the blade in the direction of the cut").

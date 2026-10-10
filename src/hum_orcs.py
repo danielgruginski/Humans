@@ -1,11 +1,13 @@
-"""Orcs: the human made orcish with what the face already has (no new body geometry). A preset over a rolled face:
+"""Orcs: the human made orcish. A preset over a rolled face:
 
-- the face sliders an orc's look needs (pointed ears, heavy brow ridge, broad flat nose, wide jaw and mouth, small
-  hooded eyes), each a mean and a spread rolled round it;
+- the face sliders an orc's look needs (pointed ears set low and back, heavy brow ridge, broad flat nose, a wide
+  jaw with an underbite, wide mouth, small hooded eyes), each a mean and a spread rolled round it;
 - green and grey-green skin, yellow / orange / red eyes, dark or grey hair, bushy brows;
 - the "Tusks" beard style (hum_styles: two tusks from the corners of the lower lip, ivory);
-- tall (the height slider high; the game makes them taller still with the creature's scale) and the strong or
-  heavy builds (the body keys, and so the clothes and armour, are the builds' own).
+- tall (the height slider high; the game makes them taller still with the creature's scale) and the Orc builds
+  (2026-10-10, hum_builds: thick neck carried forward, big upper arms, swollen forearms, big hands, deep chest,
+  shorter legs; every garment is built for them like for any build). The new keys (hum_faces PRESET_ONLY) were
+  added to the shipped head and body in place: `extend()` (hum_faces.add_keys + propagate_keys).
 
 The preset is exported into the config (`hum_export.export_config` -> "presets"), so Unity's HumanFaceGenerator
 applies the same values (`ApplyPreset`) and the game names it per creature.
@@ -32,7 +34,9 @@ ORC = dict(
         "CheekBones": (0.55, 0.15), "CheekFull": (-0.2, 0.15), "FaceSquare": (0.6, 0.15), "FaceRound": (0.0, 0.0),
         "FaceOval": (0.0, 0.0), "FaceTriangle": (0.0, 0.0), "FaceInvTriangle": (0.0, 0.0), "FaceDiamond": (0.0, 0.0),
         "HeadWidth": (0.3, 0.1), "ForeheadSlope": (0.6, 0.15), "ForeheadHeight": (-0.35, 0.15),
+        "JawWide": (0.85, 0.12), "Underbite": (0.55, 0.2), "EarLow": (0.65, 0.15), "BrowHeavy": (0.9, 0.1),
     },
+    build="Orc",                 # the body: hum_builds' M/F + build
     fem_scale=0.7,
     tones=["#5f7a43", "#56703c", "#6d8148", "#4c6238", "#647357", "#71864e", "#5a6b47", "#4f5d3f"],
     irises=["#c9a227", "#b5651d", "#9a2a1a", "#d0b84a", "#8a6a1a"],
@@ -89,6 +93,54 @@ def build_tusks(head=None):
     return made
 
 
+# the keys hum_faces gained for the orcs (face and body), added to the shipped meshes by extend()
+def new_keys():
+    import hum_faces
+    out = []
+    for n, pos, neg in hum_faces.SLIDERS:
+        if n in hum_faces.PRESET_ONLY:
+            out.append(n + "_Pos")
+            if neg:
+                out.append(n + "_Neg")
+    return out
+
+
+def propagate_keys(names, log=print):
+    """Give the LOD heads and bodies and every hair / beard / brow piece (all LODs) the head's and body's new
+    keys, without rebinding what they have (hum_hair.bind_more_keys); hair keys blurred like bind time."""
+    import hum_hair
+    head, body = bpy.data.objects["Head"], bpy.data.objects["Body"]
+    arm = bpy.data.objects["HumanRig"]
+    import hum_rig
+    hum_rig.rest(arm)
+    saved_scale = tuple(arm.scale)
+    arm.scale = (1, 1, 1)
+    out = {}
+    try:
+        for cname in ("HUM_Hair", "HUM_LOD1", "HUM_LOD2"):
+            col = bpy.data.collections.get(cname)
+            for o in sorted(col.objects if col else [], key=lambda o: o.name):
+                if o.type != 'MESH' or o.name.startswith("Cloth_"):
+                    continue
+                target = body if o.name.startswith("Body_") else head
+                added = hum_hair.bind_more_keys(o, target, names)
+                if added and o.name.startswith("Hair_"):
+                    hum_hair.smooth_keys_spatial(o, names=set(added))
+                out[o.name] = added
+    finally:
+        arm.scale = saved_scale
+    log(f"{len(out)} objects, {sum(1 for v in out.values() if v)} took keys")
+    return out
+
+
+def extend():
+    """The orcs' keys on the shipped meshes (head, body, LODs, hair): hum_rig.restore first."""
+    import hum_faces
+    names = new_keys()
+    res = hum_faces.add_keys(names)
+    return res, propagate_keys(names)
+
+
 def _hex_lin(h):
     return hum_faces.srgb(h)
 
@@ -128,6 +180,16 @@ def orc_face(seed, preset=ORC):
     p["scalp"] = 0.0 if f["style"] in (None, "Mohawk") else 1.0
     p["beard_shadow"] = 0.0
     f["height"] = rng.uniform(*preset["height"])
+    if preset.get("build"):                        # the preset's build replaces the rolled one's body keys
+        import hum_builds
+        tag = hum_builds.tag_of(masc, preset["build"])
+        w2 = {k: v for k, v in w.items() if k not in hum_builds.BODY_KEYS}
+        w2.update(hum_builds.BUILDS[tag]["keys"])
+        g = w2.get("Masculine", 0.0) - w2.get("Feminine", 0.0)
+        for k, (a, b) in hum_faces.CORRECTIVES.items():
+            w2[k] = g * w2.get(b, 0.0) if (a == "Masculine" and b.startswith("Anc")) else w2.get(a, 0.0) * w2.get(b, 0.0)
+        f["keys"] = w2
+        f["build"] = tag
     return f
 
 
@@ -137,7 +199,8 @@ def export(preset=ORC):
                 sliders=[dict(name=k, mean=float(m), jitter=float(s)) for k, (m, s) in preset["sliders"].items()],
                 femScale=preset["fem_scale"], tones=preset["tones"], irises=preset["irises"],
                 hairStyles=preset["hair_styles"], hairColors=preset["hair_colors"], beard=preset["beard"],
-                beardColor=preset["beard_color"], brows=preset["brows"], heightMin=preset["height"][0],
+                beardColor=preset["beard_color"], brows=preset["brows"], build=preset.get("build", ""),
+                heightMin=preset["height"][0],
                 heightMax=preset["height"][1], sexMin=preset["sex_min"], blushMin=preset["blush"][0],
                 blushMax=preset["blush"][1])
 

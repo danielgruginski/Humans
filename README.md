@@ -518,10 +518,11 @@ To make better-looking armour:
 Budget (MStrong, whole character incl. body/head/hair): 7.4k tris at LOD2, 17.5k at LOD1. Plate LOD2:
 cuirass 491, legs 330, arms 207, helm 197, pauldrons 158, gauntlets 79.
 
-## Orcs (face presets)
+## Orcs (face presets and the Orc builds)
 
-Orcs are the human made orcish without new body geometry (Daniel, 2026-10-04: "paint the humanoid form green and
-add tusks and pointy ears"). `src/hum_orcs.py`:
+Orcs began as the human made orcish without new body geometry (Daniel, 2026-10-04: "paint the humanoid form green and
+add tusks and pointy ears"); from the game camera they read as green humans, so on 2026-10-10 they got their own
+shapes and builds. `src/hum_orcs.py`:
 
 - **Preset `ORC`**: face sliders as a mean and a spread each (pointed ears, heavy brow ridge, broad flat nose, wide
   jaw and mouth, small hooded eyes; a woman's means x `fem_scale` 0.7, the ears not), green / grey-green tones,
@@ -536,6 +537,50 @@ add tusks and pointy ears"). `src/hum_orcs.py`:
   iris, blush, hair, brows, beard + its colour, height); the beard is set even on a woman (an orc's tusks).
 - Preview in Blender: `hum_orcs.lineup(head, [1, 2, 3, 4])` -> `renders/orc_lineup.png`.
 
+- **Orc shapes** (2026-10-10, `hum_faces.SLIDERS`, appended; `PRESET_ONLY`: random faces never roll them and draw
+  nothing for them, so every rolled face is unchanged): face keys **JawWide** (chin-bones), **Underbite**
+  (chin-prognathism), **EarLow** (ears down and back), **BrowHeavy** (our own: the band over the eyes pushed forward);
+  body keys **NeckThick**, **NeckForward**, **NeckLength**, **UpperArmSize**, **TorsoDepth**, **ChestWide**,
+  **LegLength** (MPFB targets) and our own **ForearmSize** (radial swell round the forearm), **HandSize** (x1.45 about
+  the wrist, finger joints too), **Traps** (the shoulders' top lifted, most at the back), **ArmsOut** (each arm's bones
+  5.5 cm out, the clavicle half, by skin weights) and **ArmBulk** (upper-arm swell). Our own shapes are functions on
+  the full MPFB coords (`hum_faces.DEFORMS`, a SLIDERS target `"@name"`), joint cubes included, so the skeleton
+  follows them like any MPFB target.
+- **Orc builds** `MOrc` / `FOrc` (`hum_builds`, odds 0: never rolled for a human; the creator doesn't offer them):
+  the Strong build pushed further plus those keys. The preset's `build` puts an orc on them (`HumanFaceGenerator.
+  ApplyPreset`); every garment is built for them like for any build (65 x 2 x 3 LODs).
+- **Added in place** (no rebuild): `hum_faces.add_keys(names)` captures keys on the shipped Head and Body as
+  `add_shape_keys` + `split_keys` would (residuals, face keys faded at the neck ring; it checks the basis still
+  matches), `hum_orcs.propagate_keys` gives them to the LOD heads/bodies and every hair piece
+  (`hum_hair.bind_more_keys`: Surface Deform for just those keys, keeping the rest). `hum_rig.restore(src)` first.
+  Then `build_wardrobe(tags=["MOrc"|"FOrc"], names=...)` in ~16-garment chunks, and the exports (body, hair, every
+  cloth family, config, rig). Renders: `renders/orc_body_before_after_bare.png`, `orc_build_sets_M.png`,
+  `orc_build_sets_F.png`; Unity `MedievalSetting/Logs/OrcsV2`.
+
 A new race is a new preset dict in `PRESETS` (and a beard-style feature if it needs one), re-exported config, then
-Tools > Humans > Rebuild Prefab and Showcase in Unity.
+Tools > Humans > Rebuild Prefab and Showcase in Unity; a race with its own body adds preset-only keys and a build.
+
+### Orc gear (`src/hum_orcgear.py`, 2026-10-10)
+
+Built for the Orc builds only (`build_wardrobe(tags=["MOrc", "FOrc"], names=list(hum_orcgear.ORC))`; a human build has
+no orc gear), shipped in `Human_Cloth_Orc.fbx`:
+
+- **OrcMantle** (material `fur`, slot `shoulders`): a thick fur shell over the shoulders and upper back (3-6 cm off the
+  body, more on the tops of the shoulders), lumpy (`_lumps` noise along the normals), its hem cut into hanging tufts
+  (a fringe of points every 4.2 cm), a 1.4 cm rim. Pattern `T_Cloth_Fur` (`hum_paint.fur_texture`: strands in
+  irregular blotches), Unity `M_HumanFur` (Humans/Cloth), colour group `Fur` (`hum_faces.FUR`). Not over a breastplate
+  or the jerkin (`excludes`: their top edges came through the fur).
+- **OrcKilt** (leather, slot `kilt`): a wide studded belt and four hide flaps (front and back to above the knee, the
+  sides shorter) with ragged, strip-cut hems; the flaps hang on the skirt ring.
+- **Orc plate**, `PlateStyle("Orc")` on hum_plate's machinery: cut edges, big rivets, no ridge, spikes, colour group
+  `OrcIron` (`hum_faces.ORC_IRON`: dull grey to rust-brown, mid-dark), and every plate hammered (`_dent`: pushed a few
+  millimetres in and out by a smooth noise, along the direction away from the body or the head, so a plate's
+  thickness stays). **OrcCuirass** (breast- and backplate and one hoop; no tassets: the kilt; it hides no skin - with no
+  gorget the chest region showed a see-through band under the throat), **OrcPauldrons** (a crest of spikes, flaring
+  lames), **OrcLegs** (spiked poleyns, greaves, no cuisses), **OrcHelm** (an open bascinet with horns; `hides_hair`:
+  there is no coif under it). Unity: the OrcIron pieces get `M_HumanPlateRough` (Humans/Plate at `_Metallic` 0.55,
+  smoothness 0.32: at full metal a rough dark plate rendered black; the shader's `_Metallic` defaults to 1).
+- Sets **Orc Hide** (trousers, boots, bracers, kilt, mantle) and **Orc Iron** (the kilt and bracers under the iron),
+  in `hum_robe.NO_RANDOM` (never on random people). LOD0 triangles: mantle 1.9-2.2k, kilt 1.2k, cuirass 2.6k,
+  pauldrons 1.6k, legs 2.1k, helm 2.5k (L1 280-760).
 

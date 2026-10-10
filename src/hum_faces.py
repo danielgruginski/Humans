@@ -71,9 +71,35 @@ SLIDERS = [
     ("Hips", "measure-hips-circ-incr", "measure-hips-circ-decr"),
     ("Bust", "measure-bust-circ-incr", "measure-bust-circ-decr"),
     ("Belly", "stomach-pregnant-incr", None),
+    # 2026-10-10, the orcs (hum_orcs): a heavier jaw, an underbite, ears set lower and further back (face);
+    # thick necks and arms, big hands, a deep chest and shorter legs (body: the Orc builds). Appended so the
+    # earlier keys keep their order; PRESET_ONLY: random humans never roll them (and draw nothing for them).
+    ("JawWide", "chin-bones-incr", "chin-bones-decr"),
+    ("BrowHeavy", "@brow", None),
+    ("Underbite", "chin-prognathism-incr", "chin-prognathism-decr"),
+    ("EarLow", ["*ear-trans-down", "*ear-trans-backward"], "*ear-trans-up"),
+    ("NeckThick", ["neck-scale-depth-incr", "measure-neck-circ-incr"], ["neck-scale-depth-decr", "measure-neck-circ-decr"]),
+    ("NeckForward", "neck-trans-forward", "neck-trans-backward"),
+    ("UpperArmSize", ["*upperarm-scale-horiz-incr", "*upperarm-scale-depth-incr"],
+     ["*upperarm-scale-horiz-decr", "*upperarm-scale-depth-decr"]),
+    ("ForearmSize", "@forearm", None),
+    ("HandSize", "@hand", None),
+    ("TorsoDepth", "torso-scale-depth-incr", "torso-scale-depth-decr"),
+    ("LegLength", ["measure-upperleg-height-incr", "measure-lowerleg-height-incr"],
+     ["measure-upperleg-height-decr", "measure-lowerleg-height-decr"]),
+    ("NeckLength", "measure-neck-height-incr", "measure-neck-height-decr"),
+    ("ChestWide", "torso-scale-horiz-incr", "torso-scale-horiz-decr"),
+    ("Traps", "@traps", None),
+    ("ArmsOut", "@arms_out", None),
+    ("ArmBulk", "@arm_bulk", None),
 ]
 BODY_SLIDERS = ["ArmMuscle", "ShoulderMuscle", "LegMuscle", "ChestMuscle", "BackMuscle", "VShape",
-                "ShoulderWidth", "Waist", "Hips", "Bust", "Belly"]
+                "ShoulderWidth", "Waist", "Hips", "Bust", "Belly",
+                "NeckThick", "NeckForward", "UpperArmSize", "ForearmSize", "HandSize", "TorsoDepth", "LegLength",
+                "NeckLength", "ChestWide", "Traps", "ArmsOut", "ArmBulk"]
+PRESET_ONLY = {"JawWide", "BrowHeavy", "Underbite", "EarLow", "NeckThick", "NeckForward", "UpperArmSize",
+               "ForearmSize", "HandSize", "TorsoDepth", "LegLength", "NeckLength", "ChestWide", "Traps", "ArmsOut",
+               "ArmBulk"}
 MUSCLE_SLIDERS = ["ArmMuscle", "ShoulderMuscle", "LegMuscle", "ChestMuscle", "BackMuscle", "VShape"]
 
 # macro keys: name -> (macros, race)
@@ -100,8 +126,164 @@ CORRECTIVES = {
 }
 
 
+def _smooth(a, b, x):
+    t = np.clip((x - a) / (b - a), 0.0, 1.0)
+    return t * t * (3 - 2 * t)
+
+
+def _arm_axis(C, sk, side):
+    """(elbow, wrist, unit axis, length) of one arm in full coords C."""
+    H, _ = sk.ends(C)
+    a, b = H[sk.index["lowerarm_" + side]], H[sk.index["hand_" + side]]
+    L = float(np.linalg.norm(b - a))
+    return a, b, (b - a) / L, L
+
+
+def _deform_forearm(C, rig, sk, swell=0.75):
+    """Forearms swollen round their own axis: most below the elbow (the muscle's belly), less at the wrist,
+    nothing past it (the hand key takes over). Radial only, so the elbow and wrist joints stay put."""
+    C = C.copy()
+    for side in ("l", "r"):
+        a, b, u, L = _arm_axis(C, sk, side)
+        d = C - a
+        t = d @ u
+        rad = d - t[:, None] * u
+        r = np.linalg.norm(rad, axis=1)
+        x = t / L
+        prof = _smooth(-0.08, 0.3, x) * (1.0 - 0.45 * _smooth(0.5, 1.05, x)) * _smooth(1.2, 1.02, x)
+        m = prof * _smooth(0.12, 0.085, r) * (np.sign(C[:, 0]) == np.sign(a[0]))
+        C += rad * (swell * m)[:, None]
+    return C
+
+
+def _deform_hand(C, rig, sk, scale=1.45):
+    """Hands scaled about the wrist joint (fingers' joints too, so their bones follow), easing in over the wrist."""
+    C = C.copy()
+    for side in ("l", "r"):
+        a, b, u, L = _arm_axis(C, sk, side)
+        d = C - b
+        t = d @ u
+        m = (_smooth(-0.035, 0.015, t) * _smooth(0.34, 0.27, np.linalg.norm(d, axis=1))
+             * (np.sign(C[:, 0]) == np.sign(b[0])))
+        C = C + d * ((scale - 1.0) * m)[:, None]
+    return C
+
+
+_SKIN = {}
+
+
+def _skin(n):
+    """MPFB's skin vertices (its "body" group: the helpers and joint cubes are not in it)."""
+    if n not in _SKIN:
+        m = np.zeros(n, bool)
+        m[hum_mpfb.group_members(bpy.data.objects[hum_mpfb.SOURCE], "body")] = True
+        _SKIN[n] = m
+    return _SKIN[n]
+
+
+def _deform_traps(C, rig, sk, lift=0.055):
+    """The trapezius raised: the top of each shoulder between the neck and the shoulder joint lifts, most
+    a third of the way out and toward the back, so the neck sinks into a slope of muscle. Skin only."""
+    C = C.copy()
+    skin = _skin(len(C))
+    H, _ = sk.ends(C)
+    n = H[sk.index["neck_01"]]
+    for side in ("l", "r"):
+        sh = H[sk.index["upperarm_" + side]]
+        e = sh - n
+        s = np.clip((C - n) @ e / float(e @ e), -0.5, 1.5)
+        p = n + s[:, None] * e
+        d = np.linalg.norm((C - p)[:, :2], axis=1)              # off the line, across (x/y)
+        above = C[:, 2] - p[:, 2]
+        w = (_smooth(-0.05, 0.3, s) * _smooth(1.0, 0.65, s) * _smooth(0.11, 0.06, d)
+             * _smooth(-0.04, 0.0, above) * _smooth(0.12, 0.06, above) * skin)
+        w *= 0.65 + 0.35 * _smooth(-0.04, 0.03, C[:, 1] - p[:, 1])  # more at the back (MPFB: +Y is the back)
+        C[:, 2] += lift * w
+        C[:, 1] += 0.25 * lift * w
+    return C
+
+
+def _deform_brow(C, rig, sk, out=0.011):
+    """A heavy brow ridge: the band above the eyes pushed forward (and a little down) over the eyes, the
+    middle (glabella) with it; the eyes and the helpers stay. Skin only."""
+    C = C.copy()
+    skin = _skin(len(C))
+    el, er = rig.centre(C, "helper-l-eye"), rig.centre(C, "helper-r-eye")
+    c = (el + er) / 2
+    z0 = c[2] + 0.021
+    half = abs(el[0] - er[0]) / 2 + 0.03
+    w = (np.exp(-0.5 * ((C[:, 2] - z0) / 0.011) ** 2) * _smooth(half + 0.012, half - 0.01, np.abs(C[:, 0] - c[0]))
+         * _smooth(c[1] + 0.02, c[1] - 0.005, C[:, 1]) * skin)
+    C[:, 1] -= out * w
+    C[:, 2] -= 0.35 * out * w
+    return C
+
+
+_W = {}
+
+
+def _weights(sk, n):
+    """MPFB's skin weights on every source vertex (joint cubes included), cached."""
+    if n not in _W:
+        _W[n] = sk.weight_matrix(np.arange(n))
+    return _W[n]
+
+
+def _limb(sk, root):
+    """root and every bone below it."""
+    out = [root]
+    for b in sk.bones:
+        if sk.rig[b].get("parent") in out:
+            out.append(b)
+    return [b for b in out if b in sk.index]
+
+
+def _deform_arms_out(C, rig, sk, out=0.055):
+    """The arms set further out (a broader frame across the shoulders): every vertex moves as its skin weights say,
+    each arm's bones (and so its joint cubes) by `out` sideways and the clavicle half as far, so the shoulder's top
+    widens smoothly into the chest."""
+    W = _weights(sk, len(C))
+    H, _ = sk.ends(C)
+    D = np.zeros((len(sk.bones), 3))
+    for side in ("l", "r"):
+        s = np.sign(H[sk.index["upperarm_" + side]][0])
+        D[sk.index["clavicle_" + side]] = (s * out * 0.5, 0.0, out * 0.15)
+        for b in _limb(sk, "upperarm_" + side):
+            D[sk.index[b]] = (s * out, 0.0, 0.0)
+    return C + W @ D
+
+
+def _deform_arm_bulk(C, rig, sk, swell=0.35):
+    """Upper arms swollen round their own axis (biceps, triceps), most at mid-arm, nothing at the shoulder's top
+    or past the elbow; the arm's own skin only (by weights), joints stay."""
+    C = C.copy()
+    W = _weights(sk, len(C))
+    skin = _skin(len(C))
+    H, _ = sk.ends(C)
+    for side in ("l", "r"):
+        a, b = H[sk.index["upperarm_" + side]], H[sk.index["lowerarm_" + side]]
+        L = float(np.linalg.norm(b - a))
+        u = (b - a) / L
+        d = C - a
+        t = d @ u
+        rad = d - t[:, None] * u
+        x = t / L
+        arm = W[:, [sk.index[k] for k in _limb(sk, "upperarm_" + side)]].sum(1)
+        prof = _smooth(0.1, 0.45, x) * _smooth(1.05, 0.75, x)
+        m = prof * _smooth(0.4, 0.8, arm) * skin * _smooth(0.14, 0.1, np.linalg.norm(rad, axis=1))
+        C += rad * (swell * m)[:, None]
+    return C
+
+
+# shapes of our own (a SLIDERS target "@name"): fn(full coords, rig, skeleton) -> full coords
+DEFORMS = {"forearm": _deform_forearm, "hand": _deform_hand, "traps": _deform_traps, "brow": _deform_brow,
+           "arms_out": _deform_arms_out, "arm_bulk": _deform_arm_bulk}
+
+
 def _targets(spec, w=1.0):
     if spec is None:
+        return None
+    if isinstance(spec, str) and spec.startswith("@"):
         return None
     if isinstance(spec, (list, tuple)):
         out = {}
@@ -133,11 +315,76 @@ def key_states():
     """name -> state kwargs for hum_head.all_coords."""
     out = {}
     for name, pos, neg in SLIDERS:
-        out[name + "_Pos"] = dict(targets=_targets(pos))
+        own = isinstance(pos, str) and pos.startswith("@")
+        out[name + "_Pos"] = dict(deform=pos[1:]) if own else dict(targets=_targets(pos))
         if neg:
             out[name + "_Neg"] = dict(targets=_targets(neg))
     for name, (m, r) in MACROS.items():
         out[name] = dict(macros=m, race=r)
+    return out
+
+
+def _bound(st, rig, sk):
+    """A key state for hum_head.full_coords: a DEFORMS name becomes the C -> C function."""
+    if "deform" not in st:
+        return st
+    st = dict(st)
+    fn = DEFORMS[st.pop("deform")]
+    st["deform"] = lambda C: fn(C, rig, sk)
+    return st
+
+
+def add_keys(names, head=None, body=None, src=None, eps=1e-5):
+    """Add (or redo) these keys on the shipped Head and Body in place, as add_shape_keys + hum_builds.split_keys
+    make them: residuals over the bones' movement, face keys faded at the neck ring and without bone deltas,
+    body keys with their bone deltas in hum_rig.JOINT_DELTAS. Needs hum_rig.restore() first. The LOD heads and
+    bodies and the hair pieces take them with hum_orcs.propagate_keys. Returns {key: (on head, on body)}."""
+    import hum_builds
+    head = head or bpy.data.objects["Head"]
+    body = body or bpy.data.objects["Body"]
+    src = src or bpy.data.objects["MPFB_Source"]
+    rig = hum_head.Rig(src)
+    sk = hum_rig.SK
+    assert sk is not None and hum_rig.JOINT_DELTAS, "hum_rig.restore(src) first"
+    bi = hum_body.BodyIndex(src, rig)
+    W_head = hum_rig.weights_of(head, sk)
+    W_body = hum_rig.weights_of(body, sk)
+    C0 = hum_head.full_coords(src, rig)
+    h0 = hum_head.all_coords(src, rig, C=C0)
+    b0 = C0[bi.idx]
+    j0 = sk.ends(C0)[0]
+    hb = np.array([d.co[:] for d in head.data.shape_keys.key_blocks[0].data])
+    bb = np.array([d.co[:] for d in body.data.shape_keys.key_blocks[0].data])
+    assert np.abs(hb - h0).max() < 1e-5 and np.abs(bb - b0).max() < 1e-5, "the shipped basis no longer matches"
+    fade = hum_builds.neck_fade(head, h0)[:, None]
+    states = key_states()
+    out = {}
+    hum_mpfb.set_state(src)
+    try:
+        for name in names:
+            C = hum_head.full_coords(src, rig, **_bound(states[name], rig, sk))
+            h = hum_head.all_coords(src, rig, C=C)
+            b = C[bi.idx]
+            j = sk.ends(C)[0]
+            body_key = name in hum_builds.BODY_KEYS
+            h = hum_rig.residual(h, h0, j, j0, W_head)
+            if not body_key:
+                h = h0 + (h - h0) * fade
+            on_head = np.abs(h - h0).max() > eps
+            if on_head:
+                hum_head.add_key(head, name, h, h0)
+            elif head.data.shape_keys.key_blocks.get(name):
+                head.shape_key_remove(head.data.shape_keys.key_blocks[name])
+            on_body = False
+            if body_key:
+                hum_rig.JOINT_DELTAS[name] = j - j0
+                bk = hum_rig.residual(b, b0, j, j0, W_body)
+                on_body = np.abs(bk - b0).max() > eps
+                if on_body:
+                    hum_body.add_key(body, name, bk)
+            out[name] = (bool(on_head), bool(on_body))
+    finally:
+        hum_mpfb.set_state(src)
     return out
 
 
@@ -187,7 +434,7 @@ def add_shape_keys(ob, src, rig, sk=None, body=None, bi=None, eps=1e-5):
                 hum_body.add_key(body, name, bb)
 
     for name, st in states.items():
-        h, b, j = extract(hum_head.full_coords(src, rig, **st))
+        h, b, j = extract(hum_head.full_coords(src, rig, **_bound(st, rig, sk)))
         cache[name] = (h, b, j)
         put(name, h, b, j)
     for name, (a, b_) in CORRECTIVES.items():
@@ -294,13 +541,16 @@ def armour_group(piece):
         return hum_cloth.GARMENTS[piece]["group"]
     if piece in PLATES:
         return "Plates"
-    return {"leather": "Leather", "quilt": "Padding", "mail": "Steel", "plate": "Steel"}.get(
+    return {"leather": "Leather", "quilt": "Padding", "mail": "Steel", "plate": "Steel", "fur": "Fur"}.get(
         hum_cloth.GARMENTS[piece]["material"], "Cloth")
 
 
+FUR = ["#5a4632", "#6b5a45", "#3e342a", "#7a6a58", "#4a4440", "#2e2924"]     # the orcs' mantles (hum_orcgear)
+ORC_IRON = ["#6e665e", "#7a6652", "#5f5a55", "#66625e", "#5a4636"]           # the orcs' iron: dull grey to rust-brown
+# (mid-dark: the plate shader is metal, and a near-black albedo rendered as a flat black hole in Unity)
 ARMOUR_PALETTES = {"Leather": ARMOR_LEATHER, "Plates": ARMOR_LEATHER, "Padding": PADDING, "Steel": STEEL,
                    "Blackened": BLACKENED, "Suit": SUIT,
-                   "Boots": LEATHER, "Cloth": WOOL}
+                   "Boots": LEATHER, "Cloth": WOOL, "Fur": FUR, "OrcIron": ORC_IRON}
 
 
 def random_armor(rng, o, chance=0.25):
@@ -382,6 +632,8 @@ def _random_face(seed):
     bias = dict(FEM_BIAS if not masc else MASC_BIAS)
     bias["MouthCorners"] = bias.get("MouthCorners", 0.0) + 0.25
     for name, pos, neg in SLIDERS:
+        if name in PRESET_ONLY:
+            continue                          # the orcs' (no draw: every rolled face stays as it was)
         v = rng.gauss(bias.get(name, 0.0) * sex, 0.3) * SPREAD.get(name, 1.0)
         if name.startswith("Face") and not neg:
             v = abs(rng.gauss(0, 0.25)) if rng.random() < 0.35 else 0.0
