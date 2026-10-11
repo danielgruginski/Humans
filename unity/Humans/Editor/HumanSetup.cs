@@ -81,12 +81,13 @@ namespace Humans.EditorTools
                 if (!(AssetImporter.GetAtPath(path) is TextureImporter ti)) continue;
                 bool pattern = path.Contains("T_Cloth_") || path.Contains("T_Plate_Steel");
                 bool mask = path.Contains("T_Plate_Ornament");  // a tiling height/coverage mask: data, not colour
-                ti.sRGBTexture = pattern;                        // masks and data are not colours; fabric patterns are
+                bool tatter = path.Contains("T_Cloth_Tatter");  // the undead's torn clothes: a hole field, data
+                ti.sRGBTexture = pattern && !tatter;             // masks and data are not colours; fabric patterns are
                 ti.alphaSource = TextureImporterAlphaSource.FromInput;
                 ti.alphaIsTransparency = false;
                 ti.mipmapEnabled = true;
                 ti.wrapMode = path.Contains("Strands") || pattern || mask ? TextureWrapMode.Repeat : TextureWrapMode.Clamp;
-                ti.maxTextureSize = mask ? 512 : path.Contains("Eye") || pattern ? 256 : 1024;
+                ti.maxTextureSize = mask || tatter ? 512 : path.Contains("Eye") || pattern ? 256 : 1024;
                 ti.textureCompression = TextureImporterCompression.CompressedHQ;
                 if (mask)
                 {
@@ -109,21 +110,25 @@ namespace Humans.EditorTools
         static void ConfigureModel(string path, bool body)
         {
             if (!(AssetImporter.GetAtPath(path) is ModelImporter mi)) { Debug.LogError($"[HumanSetup] missing {path}"); return; }
-            mi.importBlendShapes = true;
-            mi.importNormals = body ? ModelImporterNormals.Calculate : ModelImporterNormals.Import;
-            mi.normalCalculationMode = ModelImporterNormalCalculationMode.AreaAndAngleWeighted;
-            mi.normalSmoothingAngle = 180f;
-            mi.importBlendShapeNormals = body ? ModelImporterNormals.Calculate : ModelImporterNormals.None;
-            mi.importTangents = ModelImporterTangents.None;
-            mi.materialImportMode = ModelImporterMaterialImportMode.None;
-            mi.animationType = body ? ModelImporterAnimationType.Human : ModelImporterAnimationType.Generic;
-            mi.avatarSetup = body ? ModelImporterAvatarSetup.CreateFromThisModel : ModelImporterAvatarSetup.NoAvatar;
-            mi.importAnimation = false;
-            mi.importCameras = false;
-            mi.importLights = false;
-            mi.meshCompression = ModelImporterMeshCompression.Off;
-            mi.isReadable = false;
-            mi.SaveAndReimport();
+            // reimport only when a setting changes: the garment FBXs are ~600 MB, a copied-in FBX is imported anyway,
+            // and reimporting every one on each rebuild ran the editor out of memory (2026-10-10, with the undead)
+            bool changed = false;
+            void Set<T>(T have, T want, System.Action<T> set) { if (!Equals(have, want)) { set(want); changed = true; } }
+            Set(mi.importBlendShapes, true, v => mi.importBlendShapes = v);
+            Set(mi.importNormals, body ? ModelImporterNormals.Calculate : ModelImporterNormals.Import, v => mi.importNormals = v);
+            Set(mi.normalCalculationMode, ModelImporterNormalCalculationMode.AreaAndAngleWeighted, v => mi.normalCalculationMode = v);
+            Set(mi.normalSmoothingAngle, 180f, v => mi.normalSmoothingAngle = v);
+            Set(mi.importBlendShapeNormals, body ? ModelImporterNormals.Calculate : ModelImporterNormals.None, v => mi.importBlendShapeNormals = v);
+            Set(mi.importTangents, ModelImporterTangents.None, v => mi.importTangents = v);
+            Set(mi.materialImportMode, ModelImporterMaterialImportMode.None, v => mi.materialImportMode = v);
+            Set(mi.animationType, body ? ModelImporterAnimationType.Human : ModelImporterAnimationType.Generic, v => mi.animationType = v);
+            Set(mi.avatarSetup, body ? ModelImporterAvatarSetup.CreateFromThisModel : ModelImporterAvatarSetup.NoAvatar, v => mi.avatarSetup = v);
+            Set(mi.importAnimation, false, v => mi.importAnimation = v);
+            Set(mi.importCameras, false, v => mi.importCameras = v);
+            Set(mi.importLights, false, v => mi.importLights = v);
+            Set(mi.meshCompression, ModelImporterMeshCompression.Off, v => mi.meshCompression = v);
+            Set(mi.isReadable, false, v => mi.isReadable = v);
+            if (changed) mi.SaveAndReimport();
             if (body)
             {
                 var avatar = AssetDatabase.LoadAllAssetsAtPath(path).OfType<Avatar>().FirstOrDefault();
@@ -131,7 +136,7 @@ namespace Humans.EditorTools
             }
         }
 
-        struct Mats { public Material skin, eye, hair, body, cloth, leather, quilt, mail, plate, fur, plateRough; }
+        struct Mats { public Material skin, eye, hair, body, cloth, leather, quilt, mail, plate, fur, plateRough, bone, glow; }
 
         static Mats BuildMaterials()
         {
@@ -159,6 +164,8 @@ namespace Humans.EditorTools
                 plate = Make("M_HumanPlate", "Humans/Plate"),
                 fur = Make("M_HumanFur", "Humans/Cloth"),                 // the orcs' mantles (T_Cloth_Fur)
                 plateRough = Make("M_HumanPlateRough", "Humans/Plate"),   // the orcs' hammered dark iron (group OrcIron)
+                bone = Make("M_HumanBone", "Humans/Cloth"),               // the skeleton (T_Cloth_Bone, projected in 3D)
+                glow = Make("M_HumanGlow", "Humans/Glow"),                // the skeleton's orbits
             };
             mats.plate.SetTexture("_Pattern", Tex("T_Plate_Steel"));
             mats.plate.SetTexture("_Ornament", AssetDatabase.LoadAssetAtPath<Texture2DArray>($"{Textures}/T_Plate_Ornament.png"));
@@ -186,18 +193,28 @@ namespace Humans.EditorTools
             mats.mail.SetFloat("_Smoothness", 0.42f);
             mats.mail.SetFloat("_Triplanar", 1f);
             mats.mail.SetFloat("_TriTile", 0.24f);                 // 24 rings per tile: 1 cm rings
-            foreach (var m in new[] { mats.cloth, mats.leather, mats.quilt, mats.mail, mats.fur }) m.SetColor("_Metal", new Color(0.68f, 0.68f, 0.7f));
+            mats.bone.SetTexture("_Pattern", Tex("T_Cloth_Bone"));
+            mats.bone.SetFloat("_Smoothness", 0.28f);
+            mats.bone.SetFloat("_HemDark", 0f);
+            mats.bone.SetFloat("_Triplanar", 1f);
+            mats.bone.SetFloat("_TriTile", 0.15f);
+            mats.glow.SetFloat("_Intensity", 2.5f);
+            foreach (var m in new[] { mats.cloth, mats.leather, mats.quilt, mats.mail, mats.fur, mats.bone }) m.SetColor("_Metal", new Color(0.68f, 0.68f, 0.7f));
+            foreach (var m in new[] { mats.cloth, mats.leather, mats.quilt, mats.mail, mats.fur })    // the undead's torn clothes
+                m.SetTexture("_TatterTex", Tex("T_Cloth_Tatter"));
             mats.skin.SetTexture("_MaskA", Tex("T_Head_MaskA"));
             mats.skin.SetTexture("_MaskB", Tex("T_Head_MaskB"));
             mats.skin.SetTexture("_MaskC", Tex("T_Head_MaskC"));
+            mats.skin.SetTexture("_RotMask", Tex("T_Head_Rot"));                // the undead's rot (rot 0: unused)
             mats.eye.SetTexture("_EyeMask", Tex("T_Eye_Mask"));
             mats.eye.SetFloat("_Smoothness", 0.72f);
             mats.hair.SetTexture("_Strands", Tex("T_Hair_Strands"));
             mats.body.SetTexture("_MaskA", Tex("T_Body_MaskA"));
             mats.body.SetTexture("_MaskB", Tex("T_Body_MaskB"));
+            mats.body.SetTexture("_RotMask", Tex("T_Body_Rot"));
             mats.body.SetTexture("_SuitPattern", Tex("T_Cloth_Weave"));
             foreach (var m in new[] { mats.skin, mats.eye, mats.hair, mats.body, mats.cloth, mats.leather, mats.quilt, mats.mail, mats.plate,
-                                      mats.fur, mats.plateRough }) EditorUtility.SetDirty(m);
+                                      mats.fur, mats.plateRough, mats.bone, mats.glow }) EditorUtility.SetDirty(m);
             AssetDatabase.SaveAssets();
             return mats;
         }
@@ -259,16 +276,20 @@ namespace Humans.EditorTools
         /// 4 Hammer, 5 Sit (Sit_Down -> Sit_Idle; leaving 5 plays Stand_Up), 6 Death (held; 0 revives), 7 Turn_L90,
         /// 8 Turn_R90 (play once and hold; they carry root rotation), 9 Idle_Look, 10 Idle_Shift; combat (looped, in
         /// a fighting stance): 11 Sword_Idle, 12 Sword_Slash, 13 Sword_Overhead, 14 Shield_Block (sword and shield),
-        /// 15 TwoHand_Idle, 16 TwoHand_Swing, 17 TwoHand_Overhead, 18 Spear_Idle, 19 Spear_Thrust, 20 Spear_Jab.</summary>
+        /// 15 TwoHand_Idle, 16 TwoHand_Swing, 17 TwoHand_Overhead, 18 Spear_Idle, 19 Spear_Thrust, 20 Spear_Jab; the zombies'
+        /// (hum_zombie_anim): 21 Zombie_Idle, 22 Zombie_Limp, 23 Zombie_Shamble (loops), 24 Zombie_Slam, 25 Zombie_Bite (play
+        /// once, ending on the zombie idle pose, and hold).</summary>
         public static readonly string[] MotionStates =
             { "Idle", "Walk", "Run", "Chop", "Hammer", "Sit_Down", "Death", "Turn_L90", "Turn_R90", "Idle_Look", "Idle_Shift",
               "Sword_Idle", "Sword_Slash", "Sword_Overhead", "Shield_Block",
-              "TwoHand_Idle", "TwoHand_Swing", "TwoHand_Overhead", "Spear_Idle", "Spear_Thrust", "Spear_Jab" };
+              "TwoHand_Idle", "TwoHand_Swing", "TwoHand_Overhead", "Spear_Idle", "Spear_Thrust", "Spear_Jab",
+              "Zombie_Idle", "Zombie_Limp", "Zombie_Shamble", "Zombie_Slam", "Zombie_Bite" };
 
         /// <summary>The combat states, per stand-in weapon (HumanToolPreview shows each set's props).</summary>
         static readonly string[] SwordStates = { "Sword_Idle", "Sword_Slash", "Sword_Overhead", "Shield_Block" };
         static readonly string[] TwoHandStates = { "TwoHand_Idle", "TwoHand_Swing", "TwoHand_Overhead" };
         static readonly string[] SpearStates = { "Spear_Idle", "Spear_Thrust", "Spear_Jab" };
+        static readonly string[] ZombieStates = { "Zombie_Idle", "Zombie_Limp", "Zombie_Shamble", "Zombie_Slam", "Zombie_Bite" };
 
         static (AnimatorController, AnimatorController) BuildControllers()
         {
@@ -299,7 +320,7 @@ namespace Humans.EditorTools
             }
             // free states reach every motion directly
             var free = new[] { "Idle", "Walk", "Run", "Chop", "Hammer", "Turn_L90", "Turn_R90", "Idle_Look", "Idle_Shift", "Stand_Up" }
-                .Concat(SwordStates).Concat(TwoHandStates).Concat(SpearStates);
+                .Concat(SwordStates).Concat(TwoHandStates).Concat(SpearStates).Concat(ZombieStates);
             foreach (var a in free)
                 for (int i = 0; i < MotionStates.Length; i++)
                     if (MotionStates[i] != a)
@@ -586,8 +607,11 @@ namespace Humans.EditorTools
                     var kind = cfg.FindGarment(g)?.material;
                     bool rough = cfg.FindGarment(g)?.group == "OrcIron";
                     var mat = kind == "leather" ? mats.leather : kind == "quilt" ? mats.quilt : kind == "mail" ? mats.mail
-                            : kind == "plate" ? (rough ? mats.plateRough : mats.plate) : kind == "fur" ? mats.fur : mats.cloth;
-                    Cut(smr, Enumerable.Repeat(mat, smr.sharedMesh.subMeshCount).ToArray());
+                            : kind == "plate" ? (rough ? mats.plateRough : mats.plate) : kind == "fur" ? mats.fur
+                            : kind == "bone" ? mats.bone : mats.cloth;
+                    var list = Enumerable.Repeat(mat, smr.sharedMesh.subMeshCount).ToArray();
+                    if (kind == "bone" && list.Length > 1) list[1] = mats.glow;    // the skeleton: bone, then the orbits' light
+                    Cut(smr, list);
                 }
                 Object.DestroyImmediate(cloth);
             }

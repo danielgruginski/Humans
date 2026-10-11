@@ -108,7 +108,31 @@ class _NT:
         return sep.outputs, n.outputs['Alpha']
 
 
-def skin_material(mask_a, mask_b, mask_c=None, name="M_HumanSkin"):
+def _rot(T, c, rot_tex):
+    """The undead's rot (hum_undead): blotches, hollows and two wound sets from the rot mask, scaled by the
+    object's hum_rot = (rot, wounds A, wounds B); nothing while rot is 0 (the living)."""
+    import hum_undead
+    if rot_tex is None:
+        return c
+    (rr, rg, rb), ra = T.tex(rot_tex)
+    rot, wa, wb = T.split(T.attr("hum_rot"))
+    c = T.mix(c, T.mul(c, hum_undead.ROT_TINT + (1,)), T.math('MULTIPLY', rr, rot))
+    c = T.mix(c, (0, 0, 0, 1), T.math('MULTIPLY', T.math('MULTIPLY', ra, rot), hum_undead.HOLLOW))
+    w = T.math('MAXIMUM', T.math('MULTIPLY', rg, wa), T.math('MULTIPLY', rb, wb))
+    w = T.math('MULTIPLY', w, T.math('GREATER_THAN', rot, 0.0))
+
+    def ss(a, b, v):
+        n = T.node('ShaderNodeMapRange'); n.interpolation_type = 'SMOOTHSTEP'
+        n.inputs['From Min'].default_value, n.inputs['From Max'].default_value = a, b
+        T.link(v, n.inputs['Value'])
+        return n.outputs['Result']
+    c = T.mix(c, hum_undead.WOUND_RIM + (1,), ss(0.12, 0.45, w))
+    c = T.mix(c, hum_undead.WOUND_CORE + (1,), ss(0.5, 0.85, w))
+    return c
+
+
+def skin_material(mask_a, mask_b, mask_c=None, name="M_HumanSkin", rot=None):
+    rot = rot or bpy.data.images.get("T_Head_Rot")
     mat = bpy.data.materials.get(name) or bpy.data.materials.new(name)
     mat.use_nodes = True
     T = _NT(mat)
@@ -128,6 +152,7 @@ def skin_material(mask_a, mask_b, mask_c=None, name="M_HumanSkin"):
     c = T.mix(c, (0, 0, 0, 1), T.math('SUBTRACT', 1.0, agef))
     c = T.mix(c, T.mul(hair, (0.8, 0.8, 0.8, 1)), T.math('MULTIPLY', ba, brows))
     c = T.mix(c, lash, aa)
+    c = _rot(T, c, rot)
     shade = T.math('MULTIPLY', ab, hum_paint.SHADE_MAX)
     c = T.mix(c, (0, 0, 0, 1), T.math('SUBTRACT', 1.0, shade))
     if mask_c is not None:
@@ -152,8 +177,10 @@ def eye_material(mask, name="M_HumanEye"):
     iris = T.attr("hum_iris")
     c = T.mul((0.86, 0.84, 0.80, 1), T.mix((0, 0, 0, 1), (1, 1, 1, 1), sc))
     iris_c = T.mix(iris, T.mul(iris, (0.25, 0.25, 0.25, 1)), dk)
+    milk = T.attr("hum_milk", False)                    # the undead's clouded eyes: pupil and iris fade out
+    iris_c = T.mix(iris_c, (0.62, 0.64, 0.60, 1), T.math('MULTIPLY', milk, 0.55))
     c = T.mix(c, iris_c, ir)
-    c = T.mix(c, (0.005, 0.005, 0.005, 1), pu)
+    c = T.mix(c, (0.005, 0.005, 0.005, 1), T.math('MULTIPLY', pu, T.math('SUBTRACT', 1.0, T.math('MULTIPLY', milk, 0.85))))
     bsdf = T.node('ShaderNodeBsdfPrincipled')
     bsdf.inputs['Roughness'].default_value = 0.12
     bsdf.inputs['Coat Weight'].default_value = 0.6
@@ -241,24 +268,81 @@ def set_body_props(ob, tone, blush=0.5, freckles=0.0, cloth=(0.55, 0.47, 0.38), 
     ob["hum_bamt"] = (float(blush), float(freckles), float(top))
 
 
-def region_clip(T, mat, bsdf):
-    """Hide the regions an outer layer covers: bit (Region UV id) of the object's hum_hide."""
+def region_clip(T, mat, bsdf, keep=None):
+    """Hide the regions an outer layer covers: bit (Region UV id) of the object's hum_hide. keep: another 0/1
+    factor on the alpha (a torn garment's holes)."""
     ruv = T.node('ShaderNodeUVMap'); ruv.uv_map = "Region"
     rid, _, _ = T.split(ruv.outputs['UV'])
     rid = T.math('ROUND', rid, 0.0)
     bit = T.math('MODULO', T.math('FLOOR', T.math('DIVIDE', T.attr("hum_hide", False), T.math('POWER', 2.0, rid)), 0.0), 2.0)
-    T.link(T.math('SUBTRACT', 1.0, bit), bsdf.inputs['Alpha'])
+    a = T.math('SUBTRACT', 1.0, bit)
+    if keep is not None:
+        a = T.math('MULTIPLY', a, keep)
+    T.link(a, bsdf.inputs['Alpha'])
     mat.surface_render_method = 'DITHERED'
 
 
-def body_material(mask_a, mask_b, name="M_HumanBody"):
+TATTER_TILE = 0.6          # m: the tatter texture's repeat over the garment's rest position (triplanar)
+TATTER_HOLES = 0.17        # hole area at tatter 1 (the hems tear more)
+TATTER_FRAY = 0.22         # ragged edges: the fine fray noise added to the hole field
+TATTER_HEM = 0.6           # hems tear first (ClothData.g)
+TATTER_RIM = 0.035         # the frayed, darker cloth round a hole (in hole-field units)
+
+
+def _tatter(T, c, hem):
+    """Torn, dirty clothes (the undead; hum_undead.tatter_texture): hum_tat = (tatter, cut, 0). Holes where the
+    equalised hole field is under tatter * TATTER_HOLES (hems tear first); cut 1 cuts them out (a skeleton's rags:
+    the bones show), cut 0 paints the skin under them (hum_skin, a zombie). Returns (colour, keep factor) or
+    (colour, None) without the texture."""
+    tex = bpy.data.images.get("T_Cloth_Tatter")
+    if tex is None:
+        return c, None
+    rxy = T.node('ShaderNodeUVMap'); rxy.uv_map = "RestXY"
+    rz = T.node('ShaderNodeUVMap'); rz.uv_map = "RestZ"
+    x, y, _ = T.split(rxy.outputs['UV'])
+    z, _, _ = T.split(rz.outputs['UV'])
+    comb = T.node('ShaderNodeCombineXYZ')
+    T.link(x, comb.inputs[0]); T.link(y, comb.inputs[1]); T.link(z, comb.inputs[2])
+    sc = T.node('ShaderNodeVectorMath'); sc.operation = 'SCALE'
+    T.link(comb.outputs[0], sc.inputs[0]); sc.inputs['Scale'].default_value = 1.0 / TATTER_TILE
+    n = T.node('ShaderNodeTexImage'); n.image = tex; n.projection = 'BOX'; n.projection_blend = 0.3
+    T.link(sc.outputs[0], n.inputs['Vector'])
+    sep = T.node('ShaderNodeSeparateColor')
+    T.link(n.outputs['Color'], sep.inputs[0])
+    hole_f, dirt, fray = sep.outputs
+    tat, cut, _ = T.split(T.attr("hum_tat"))
+    on = T.math('GREATER_THAN', tat, 0.0)
+
+    def ss(a, b, v):
+        m = T.node('ShaderNodeMapRange'); m.interpolation_type = 'SMOOTHSTEP'
+        m.inputs['From Min'].default_value, m.inputs['From Max'].default_value = a, b
+        T.link(v, m.inputs['Value'])
+        return m.outputs['Result']
+    h = T.math('ADD', hole_f, T.math('MULTIPLY', T.math('SUBTRACT', fray, 0.5), TATTER_FRAY))
+    h = T.math('SUBTRACT', h, T.math('MULTIPLY', T.math('MULTIPLY', hem, TATTER_HEM), tat))
+    thr = T.math('MULTIPLY', T.math('MULTIPLY', tat, TATTER_HOLES), T.math('ADD', 1.0, cut))   # rags on bones: twice
+    d = T.math('SUBTRACT', thr, h)                                        # > 0 inside a hole
+    hole = T.math('MULTIPLY', T.math('GREATER_THAN', d, 0.0), on)
+    rim = T.math('MULTIPLY', T.math('MULTIPLY', T.math('GREATER_THAN', d, -TATTER_RIM), T.math('SUBTRACT', 1.0, hole)), on)
+    c = T.mix(c, T.mul(c, (0.5, 0.45, 0.36, 1)), T.math('MULTIPLY', ss(0.3, 0.9, dirt), T.math('MULTIPLY', tat, 0.9)))
+    c = T.mix(c, (0, 0, 0, 1), T.math('MULTIPLY', rim, 0.55))
+    inner = T.mix((0.2, 0.2, 0.2, 1), (0.6, 0.6, 0.6, 1), ss(0.0, 0.1, d))   # shadowed under the cloth's edge
+    skin = T.mul(T.attr("hum_skin"), inner)
+    c = T.mix(c, skin, T.math('MULTIPLY', hole, T.math('SUBTRACT', 1.0, cut)))
+    keep = T.math('SUBTRACT', 1.0, T.math('MULTIPLY', hole, cut))
+    return c, keep
+
+
+def body_material(mask_a, mask_b, name="M_HumanBody", rot=None):
     """Body skin + painted underclothes (same maths as Unity's Humans/Body):
         c = tone
         c = lerp(c, c * BLUSH_TINT, A.r * blush)
         c = lerp(c, c * FRECKLE_TINT, B.r * freckles)
+        (rot: _rot)
         c = lerp(c, cloth, saturate(A.g + A.a * top))
         c = c * A.b * SHADE_MAX
     """
+    rot = rot or bpy.data.images.get("T_Body_Rot")
     mat = bpy.data.materials.get(name) or bpy.data.materials.new(name)
     mat.use_nodes = True
     T = _NT(mat)
@@ -269,6 +353,7 @@ def body_material(mask_a, mask_b, name="M_HumanBody"):
     c = tone
     c = T.mix(c, T.mul(c, BLUSH_TINT), T.math('MULTIPLY', ar, blush))
     c = T.mix(c, T.mul(c, FRECKLE_TINT), T.math('MULTIPLY', br, frk))
+    c = _rot(T, c, rot)
     cm = T.math('MINIMUM', T.math('ADD', ag, T.math('MULTIPLY', aa, top)), 1.0)
     c = T.mix(c, cloth, cm)
     shade = T.math('MULTIPLY', ab, hum_paint.SHADE_MAX)
@@ -341,11 +426,12 @@ def cloth_material(pattern, name="M_HumanCloth", roughness=0.85):
     c = T.mix((0, 0, 0, 1), c, aof)
     c = T.mix(c, (0, 0, 0, 1), T.math('MULTIPLY', hem, 0.18))
     c = T.mix(c, T.mix((0, 0, 0, 1), METAL, aof), metal)
+    c, keep = _tatter(T, c, hem)
     bsdf = T.node('ShaderNodeBsdfPrincipled')
     T.link(T.math('ADD', roughness, T.math('MULTIPLY', metal, 0.4 - roughness)), bsdf.inputs['Roughness'])
     bsdf.inputs['Specular IOR Level'].default_value = 0.25
     T.link(c, bsdf.inputs['Base Color'])
-    region_clip(T, mat, bsdf)
+    region_clip(T, mat, bsdf, keep)
     out = T.node('ShaderNodeOutputMaterial')
     T.link(bsdf.outputs['BSDF'], out.inputs['Surface'])
     return mat

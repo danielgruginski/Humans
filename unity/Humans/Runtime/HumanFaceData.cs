@@ -82,6 +82,14 @@ namespace Humans
         public Color beardColor = new Color(0.23f, 0.15f, 0.09f);
         public Color browColor = new Color(0.2f, 0.13f, 0.08f);
 
+        [Header("The undead (0 = living; the Zombie and Skeleton presets set them)")]
+        [Range(0, 1)] public float rot;              // painted decay: blotches, hollows (Humans/Skin and Body _Rot)
+        public Vector2 wounds;                       // weight of the rot mask's two wound sets
+        [Range(0, 1)] public float milk;             // clouded eyes
+        [Range(0, 1)] public float tatter;           // torn, dirty clothes (Humans/Cloth _Tatter)
+        public bool tatterCut;                       // the holes cut out (a skeleton's rags), else the skin painted
+        public Color glow = new Color(0.5f, 0.88f, 0.83f);   // a skeleton's orbits (Humans/Glow)
+
         public bool Wears(string garment)
         {
             foreach (var g in outfit) if (g.garment == garment) return true;

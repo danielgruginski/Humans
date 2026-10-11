@@ -426,7 +426,8 @@ namespace Humans
         // values of the animator's "Motion" int (HumanSetup.BuildControllers)
         static readonly string[] Motions = { "Idle", "Walk", "Run", "Chop", "Hammer", "Sit", "Death", "Turn L", "Turn R", "Look", "Shift",
                                              "Sword", "Slash", "Overhead", "Block", "2H", "2H Swing", "2H Overhead",
-                                             "Spear", "Thrust", "Jab" };
+                                             "Spear", "Thrust", "Jab",
+                                             "Z Idle", "Z Limp", "Z Shamble", "Z Slam", "Z Bite" };   // the zombies' (21-25)
         int motion;
 
         void SetMotion()

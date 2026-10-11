@@ -127,8 +127,10 @@ namespace Humans
             return f;
         }
 
-        /// <summary>Lay a preset (the config's, e.g. "Orc") over a face (port of hum_orcs.orc_face): its sliders, skin,
-        /// eyes, hair, beard, brows and height, rolled from the seed; false when the config has no such preset.</summary>
+        /// <summary>Lay a preset (the config's, e.g. "Orc", "Zombie", "Skeleton") over a face (port of hum_orcs.orc_face
+        /// and hum_undead.undead_face): its sliders, skin, eyes, hair, beard, brows and height, the undead's rot, wounds,
+        /// clouded eyes, torn clothes and worn bones, rolled from the seed; false when the config has no such preset.
+        /// A preset's "wear" garments are put on here: set the outfit before, or re-apply the preset after changing it.</summary>
         public static bool ApplyPreset(HumanFaceConfig cfg, HumanFaceData f, string preset, int seed)
         {
             var p = cfg?.FindPreset(preset);
@@ -179,6 +181,25 @@ namespace Humans
             }
             if (p.heightMax > p.heightMin || p.heightMax > 0f) f.height = rng.Range(p.heightMin, p.heightMax);
             f.hairlineTint = f.hairStyle == "" || f.hairStyle == "Mohawk" ? 0f : 1f;
+            // the undead (hum_undead.undead_face); drawn after the rest, so the orcs' rolls are unchanged
+            if (p.lipFromTone != null && p.lipFromTone.Length == 3) f.lip = Mul(f.tone.linear, p.lipFromTone).gamma;
+            f.rot = p.rotMax > 0f ? rng.Range(p.rotMin, p.rotMax) : 0f;
+            f.wounds = Vector2.zero;
+            if (f.rot > 0f && p.woundChance != null && p.woundChance.Length == 2)
+            {
+                f.wounds = new Vector2(rng.Value() < p.woundChance[0] ? 1f : 0f, rng.Value() < p.woundChance[1] ? 1f : 0f);
+                if (f.wounds == Vector2.zero) f.wounds.x = 1f;
+            }
+            f.milk = p.milkMax > 0f ? rng.Range(p.milkMin, p.milkMax) : 0f;
+            f.tatter = p.tatterMax > 0f ? rng.Range(p.tatterMin, p.tatterMax) : 0f;
+            f.tatterCut = p.tatterCut;
+            if (p.wear != null)
+                foreach (var g in p.wear)
+                {
+                    var pal = cfg.GroupPalette(cfg.ArmorGroup(g));
+                    f.SetGarment(cfg, g, HumanFaceConfig.Hex(pal[rng.Int(pal.Length)]));
+                }
+            if (p.glow != null && p.glow.Length > 0) f.glow = HumanFaceConfig.Hex(p.glow[rng.Int(p.glow.Length)]);
             return true;
         }
 

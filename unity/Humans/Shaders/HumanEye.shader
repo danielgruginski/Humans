@@ -1,4 +1,5 @@
-// Human eye: front-projected eyeball mask, iris colour per character.
+// Human eye: front-projected eyeball mask, iris colour per character. _Milk (the undead): the iris fades toward a
+// pale grey and the pupil into it (hum_material.eye_material).
 Shader "Humans/Eye"
 {
     Properties
@@ -6,6 +7,7 @@ Shader "Humans/Eye"
         [NoScaleOffset] _EyeMask ("Eye mask (iris, pupil, iris dark, sclera)", 2D) = "black" {}
         _Iris ("Iris", Color) = (0.36, 0.52, 0.66, 1)
         _Smoothness ("Smoothness", Range(0, 1)) = 0.72
+        _Milk ("Clouded (undead)", Range(0, 1)) = 0
     }
     SubShader
     {
@@ -30,7 +32,7 @@ Shader "Humans/Eye"
             TEXTURE2D(_EyeMask); SAMPLER(sampler_EyeMask);
             CBUFFER_START(UnityPerMaterial)
                 half4 _Iris;
-                half _Smoothness;
+                half _Smoothness, _Milk;
             CBUFFER_END
 
             half4 frag(HVaryings i) : SV_Target
@@ -39,8 +41,9 @@ Shader "Humans/Eye"
                 half4 m = SAMPLE_TEXTURE2D(_EyeMask, sampler_EyeMask, i.uv.xy);
                 half3 col = half3(0.86, 0.84, 0.80) * m.a;
                 half3 iris = lerp(_Iris.rgb, _Iris.rgb * 0.25, m.b);
+                iris = lerp(iris, half3(0.62, 0.64, 0.60), _Milk * 0.55);
                 col = lerp(col, iris, m.r);
-                col = lerp(col, half3(0.005, 0.005, 0.005), m.g);
+                col = lerp(col, half3(0.005, 0.005, 0.005), m.g * (1 - 0.85 * _Milk));
                 return HumanShade(i, col, _Smoothness);
             }
             ENDHLSL

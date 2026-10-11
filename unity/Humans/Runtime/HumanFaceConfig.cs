@@ -101,6 +101,7 @@ namespace Humans
         public Garment[] garments;
         public string[] linen, wool, leather, armorLeather, cloaks, padding, steel, blackened, suit;   // palettes (sRGB hex)
         public string[] fur, orcIron;                                   // the orcs' mantles and their dark iron (hum_orcgear)
+        public string[] bone;                                           // the skeleton's bones (hum_undead.BONE)
 
         /// <summary>Colour group of an armour-set piece (one colour per group): Leather, Plates (leather
         /// plates), Padding, Steel (mail and plate armour), Boots or Cloth.</summary>
@@ -115,6 +116,7 @@ namespace Humans
                 case "leather": return "Leather";
                 case "quilt": return "Padding";
                 case "fur": return "Fur";
+                case "bone": return "Bone";
                 case "mail":
                 case "plate": return "Steel";
                 default: return "Cloth";
@@ -131,6 +133,7 @@ namespace Humans
                 case "Blackened": return blackened ?? steel ?? wool;
                 case "Fur": return fur ?? leather;
                 case "OrcIron": return orcIron ?? blackened ?? steel ?? wool;
+                case "Bone": return bone ?? linen;
                 case "Suit": return suit ?? wool;
                 case "Cloth": return wool;
                 default: return armorLeather;
@@ -143,6 +146,9 @@ namespace Humans
         /// from, a height range and the least strength of the sex macro (HumanFaceGenerator.ApplyPreset); build: its own
         /// body build ("Orc": the face's sex + this names the build, e.g. MOrc), else the face keeps its own.</summary>
         [Serializable] public class PresetSlider { public string name; public float mean, jitter; }
+        /// <summary>The undead's (hum_undead) as well: lipFromTone (their own lips, else the shader constant), rot and
+        /// the chance of each wound set, clouded eyes (milk), torn clothes (tatter; tatterCut: holes cut out), garments
+        /// always worn (wear: the skeleton's bones, coloured from their group's palette) and the orbits' glow.</summary>
         [Serializable] public class Preset
         {
             public string name;
@@ -151,6 +157,10 @@ namespace Humans
             public string[] tones, irises, hairStyles, hairColors, brows;
             public string beard, beardColor, build;
             public float heightMin, heightMax, sexMin, blushMin, blushMax;
+            public float[] lipFromTone, woundChance;
+            public float rotMin, rotMax, tatterMin, tatterMax, milkMin, milkMax;
+            public bool tatterCut;
+            public string[] wear, glow;
         }
         public Preset[] presets;
 

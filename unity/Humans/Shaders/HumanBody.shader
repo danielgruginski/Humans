@@ -1,6 +1,6 @@
 // Human body: skin + painted underclothes (same maths as hum_material.body_material in Blender).
 //   c = tone; c = lerp(c, c*BLUSH, A.r*blush); c = lerp(c, c*FRECKLE, B.r*freckles)
-//   c = lerp(c, cloth, saturate(A.g + A.a*top)); c *= A.b * SHADE_MAX
+//   (the undead: HumanRot, rot mask)  c = lerp(c, cloth, saturate(A.g + A.a*top)); c *= A.b * SHADE_MAX
 // Regions under garments are clipped: uv1.x = region id (per face), bit (id) of _Hide set = hidden.
 Shader "Humans/Body"
 {
@@ -8,6 +8,9 @@ Shader "Humans/Body"
     {
         [NoScaleOffset] _MaskA ("Mask A (blush, shorts, shading, chest band)", 2D) = "black" {}
         [NoScaleOffset] _MaskB ("Mask B (freckles)", 2D) = "black" {}
+        [NoScaleOffset] _RotMask ("Rot (blotches, wounds A, wounds B, hollows)", 2D) = "black" {}
+        _Rot ("Rot (undead)", Range(0, 1)) = 0
+        _Wounds ("Wound sets (x, y)", Vector) = (0, 0, 0, 0)
         _Tone ("Skin tone", Color) = (0.81, 0.59, 0.44, 1)
         _Cloth ("Underclothes", Color) = (0.85, 0.81, 0.72, 1)
         _Blush ("Blush", Range(0, 1)) = 0.5
@@ -46,10 +49,12 @@ Shader "Humans/Body"
 
             TEXTURE2D(_MaskA); SAMPLER(sampler_MaskA);
             TEXTURE2D(_MaskB); SAMPLER(sampler_MaskB);
+            TEXTURE2D(_RotMask); SAMPLER(sampler_RotMask);
             TEXTURE2D(_SuitPattern); SAMPLER(sampler_SuitPattern);
             CBUFFER_START(UnityPerMaterial)
                 half4 _Tone, _Cloth, _SuitColor;
-                half _Blush, _Freckles, _Top, _Smoothness, _Suit;
+                half _Blush, _Freckles, _Top, _Smoothness, _Suit, _Rot;
+                half4 _Wounds;
                 float _Hide, _SuitTile;
             CBUFFER_END
 
@@ -67,6 +72,8 @@ Shader "Humans/Body"
                 half3 col = _Tone.rgb;
                 col = lerp(col, col * BLUSH_TINT, a.r * _Blush);
                 col = lerp(col, col * FRECKLE_TINT, b.r * _Freckles);
+                half wet;
+                col = HumanRot(col, SAMPLE_TEXTURE2D(_RotMask, sampler_RotMask, i.uv.xy), _Rot, _Wounds.xy, wet);
                 half cloth = saturate(a.g + a.a * _Top);
                 col = lerp(col, _Cloth.rgb, cloth);
                 // a bodysuit (the under-layer of fantasy armour): the whole body in a dark woven cloth
@@ -74,7 +81,7 @@ Shader "Humans/Body"
                 col = lerp(col, _SuitColor.rgb * lerp(0.7, 1.0, weave), _Suit);
                 cloth = max(cloth, _Suit);
                 col *= a.b * SHADE_MAX;
-                return HumanShade(i, col, lerp(_Smoothness, 0.2, cloth));
+                return HumanShade(i, col, lerp(lerp(_Smoothness, 0.6, wet), 0.2, cloth));
             }
             ENDHLSL
         }

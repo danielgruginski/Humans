@@ -23,7 +23,7 @@ import hum_faces as F
 import hum_paint
 import hum_rig
 
-BUILD_NAMES = ["Slim", "Strong", "Heavy", "Orc"]
+BUILD_NAMES = ["Slim", "Strong", "Heavy", "Orc", "Undead"]
 BODY_KEYS = ({"Masculine", "Feminine", "Heavy", "Thin", "Muscular", "Slight"}
              | {f"{s}_{d}" for s in F.BODY_SLIDERS + ["NeckWidth"] for d in ("Pos", "Neg")})
 
@@ -55,6 +55,18 @@ _SHAPE = {
                        NeckLength_Neg=0.45, Traps_Pos=0.6, UpperArmSize_Pos=0.5, ForearmSize_Pos=0.75,
                        HandSize_Pos=0.75, TorsoDepth_Pos=0.25, ChestWide_Pos=0.25, LegLength_Neg=0.25,
                        ArmsOut_Pos=0.55, ArmBulk_Pos=0.6),
+    # 2026-10-10: the undead's (hum_undead: zombies, and the skeletons are built on it too; BUILD_ODDS 0): starved
+    # and hunched - thin and slight at full, wasted muscles, a scrawny neck carried forward, the ribcage over a
+    # sunken belly, collarbones standing out
+    ("M", "Undead"): dict(Thin=1.0, Slight=1.0, ChestMuscle_Pos=0.0, ShoulderWidth_Pos=0.1, ArmMuscle_Neg=1.0,
+                          LegMuscle_Neg=0.8, ShoulderMuscle_Neg=1.0, ChestMuscle_Neg=1.0, BackMuscle_Neg=0.8,
+                          NeckThick_Neg=0.8, NeckForward_Pos=1.0, Waist_Neg=0.6, NeckLength_Pos=0.4,
+                          UpperArmSize_Neg=0.6, TorsoDepth_Neg=0.3, VShape_Neg=0.3, Hunch_Pos=1.0, Ribs_Pos=1.0,
+                          Sunken_Pos=1.0, Bony_Pos=1.0),
+    ("F", "Undead"): dict(Thin=1.0, Slight=1.0, Bust_Pos=0.0, Bust_Neg=0.3, Hips_Pos=0.1, Waist_Neg=0.5,
+                          ArmMuscle_Neg=0.9, LegMuscle_Neg=0.7, ShoulderMuscle_Neg=0.8, BackMuscle_Neg=0.6,
+                          NeckThick_Neg=0.6, NeckForward_Pos=0.9, NeckLength_Pos=0.3, UpperArmSize_Neg=0.5,
+                          Hunch_Pos=0.9, Ribs_Pos=1.0, Sunken_Pos=0.9, Bony_Pos=1.0),
 }
 BUILDS = {}
 for _sex in "MF":
@@ -62,7 +74,7 @@ for _sex in "MF":
         _k = dict(_BASE[_sex])
         _k.update(_SHAPE[(_sex, _name)])
         BUILDS[_sex + _name] = dict(sex=_sex, name=_name, keys={k: v for k, v in _k.items() if v > 0})
-BUILD_ODDS = {"Slim": 0.4, "Strong": 0.3, "Heavy": 0.3, "Orc": 0.0}
+BUILD_ODDS = {"Slim": 0.4, "Strong": 0.3, "Heavy": 0.3, "Orc": 0.0, "Undead": 0.0}
 
 
 def tag_of(masc, name):
@@ -220,9 +232,19 @@ def build_wardrobe(scene, arm, sk, tags=None, names=None, log=print):
             B = hum_cloth.BodyFrame(body, arm, sk)
             B._R = B.regions()
             for name in (names or list(hum_cloth.GARMENTS)):
-                if hum_cloth.GARMENTS[name].get("bodysuit"):  # painted on the body: no geometry
+                rec = hum_cloth.GARMENTS[name]
+                if rec.get("bodysuit"):                       # painted on the body: no geometry
                     continue
-                if hum_cloth.GARMENTS[name].get("headgear"):
+                if rec.get("builds") and BUILDS[tag]["name"] not in rec["builds"]:
+                    continue                                  # a race's own (the skeleton: the Undead builds)
+                if rec.get("make"):                           # its own maker, LODs included (hum_skeleton)
+                    ob = rec["make"](scene, B, name, arm, sk, body)
+                    to_rest(ob, bs.dJ, sk)
+                    ob.hide_set(True)
+                    ob.hide_render = True
+                    out[ob.name] = hum_cloth.tris(ob)
+                    continue
+                if rec.get("headgear"):
                     ob, nk = hum_armor.build_headgear(scene, name, arm, sk)
                 else:
                     ob, nk = hum_cloth.build_garment(scene, B, name, arm, sk, body)

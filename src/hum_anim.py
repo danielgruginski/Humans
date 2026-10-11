@@ -1203,3 +1203,11 @@ def export_clips(names=None):
     with open(os.path.join(hum_export.EXPORT, "human_clips.json"), "w") as fh:
         json.dump(table, fh, indent=1)
     return written
+
+
+# the zombies' clips (2026-10-11): their own module, appended here so export_clips and human_clips.json carry them
+import hum_zombie_anim                                    # noqa: E402  (it registers itself at its end too:
+if hasattr(hum_zombie_anim, "BUILD"):                    # imported first, it is only half made here)
+    CLIPS.update(hum_zombie_anim.CLIPS)
+    SPEED.update(hum_zombie_anim.SPEED)
+    BUILD.update(hum_zombie_anim.BUILD)

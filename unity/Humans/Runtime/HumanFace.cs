@@ -68,7 +68,10 @@ namespace Humans
             IdTop = Shader.PropertyToID("_Top"), IdHide = Shader.PropertyToID("_Hide"),
             IdColor = Shader.PropertyToID("_Color"), IdCapCut = Shader.PropertyToID("_CapCut"),
             IdHoodCut = Shader.PropertyToID("_HoodCut"), IdSuit = Shader.PropertyToID("_Suit"),
-            IdSuitColor = Shader.PropertyToID("_SuitColor");
+            IdSuitColor = Shader.PropertyToID("_SuitColor"), IdRot = Shader.PropertyToID("_Rot"),
+            IdWounds = Shader.PropertyToID("_Wounds"), IdMilk = Shader.PropertyToID("_Milk"),
+            IdTatter = Shader.PropertyToID("_Tatter"), IdTatterCut = Shader.PropertyToID("_TatterCut"),
+            IdSkin = Shader.PropertyToID("_Skin"), IdGlow = Shader.PropertyToID("_Glow");
 
         static readonly Dictionary<Mesh, string[]> ShapeNames = new Dictionary<Mesh, string[]>();        MaterialPropertyBlock mpb;
         static readonly Dictionary<string, HumanPiece> Loaded = new Dictionary<string, HumanPiece>();
@@ -244,9 +247,11 @@ namespace Humans
             var bodyWeights = HumanFaceData.BodyOnly(Config, weights);     // the build: body and skeleton
             int hide = Config.HideMask(face.GarmentNames);
             var suit = Config.SuitColor(face.outfit);
+            bool bodyShows = (hide & 0xFFFF) != 0xFFFF;              // the skeleton hides every region: skip the body
             foreach (var b in bodies)
             {
                 if (b == null) continue;
+                if (b.enabled != bodyShows) b.enabled = bodyShows;
                 SetWeights(b, bodyWeights);
                 mpb.Clear();
                 mpb.SetColor(IdTone, face.tone);
@@ -256,6 +261,8 @@ namespace Humans
                 mpb.SetFloat(IdTop, face.chestBand);
                 mpb.SetFloat(IdHide, hide);
                 mpb.SetFloat(IdSuit, suit.HasValue ? 1f : 0f);
+                mpb.SetFloat(IdRot, face.rot);
+                mpb.SetVector(IdWounds, face.wounds);
                 if (suit.HasValue) mpb.SetColor(IdSuitColor, suit.Value);
                 b.SetPropertyBlock(mpb);
             }
@@ -315,6 +322,8 @@ namespace Humans
             foreach (var kv in worn)
             {
                 string g = kv.Key.Substring(6).Split('_')[0];
+                var mat = Config.FindGarment(g)?.material;
+                bool torn = mat != "plate" && mat != "bone";           // fabrics tear; iron and the bones don't
                 for (int lod = 0; lod < LodCount; lod++)
                 {
                     var smr = Piece(kv.Key, lod, clothRoot);
@@ -324,6 +333,10 @@ namespace Humans
                     mpb.Clear();
                     mpb.SetColor(IdColor, kv.Value);
                     mpb.SetFloat(IdHide, Config.LayerHideMask(g, face.GarmentNames));
+                    mpb.SetFloat(IdTatter, torn ? face.tatter : 0f);   // the undead (0 for the living)
+                    mpb.SetFloat(IdTatterCut, face.tatterCut ? 1f : 0f);
+                    mpb.SetColor(IdSkin, face.tone);
+                    if (mat == "bone") mpb.SetColor(IdGlow, face.glow);  // the skeleton's orbits (Humans/Glow)
                     smr.SetPropertyBlock(mpb);
                 }
             }
@@ -367,9 +380,12 @@ namespace Humans
             mpb.SetFloat(IdBrows, Mathf.Max(face.paintedBrows, minBrows));
             mpb.SetFloat(IdScalp, string.IsNullOrEmpty(face.hairStyle) ? 0f : face.hairlineTint);
             mpb.SetFloat(IdBeardShadow, string.IsNullOrEmpty(face.beardStyle) ? 0f : face.beardShadow);
+            mpb.SetFloat(IdRot, face.rot);
+            mpb.SetVector(IdWounds, face.wounds);
             head.SetPropertyBlock(mpb, 0);
             mpb.Clear();
             mpb.SetColor(IdIris, face.iris);
+            mpb.SetFloat(IdMilk, face.milk);
             head.SetPropertyBlock(mpb, 1);
 
             if (hairRoot == null) return;

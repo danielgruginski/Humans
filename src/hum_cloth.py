@@ -812,6 +812,8 @@ import hum_orcgear                                        # noqa: E402  (the orc
 GARMENTS.update(hum_orcgear.ORC)                          # before this module, like hum_robe)
 hum_armor.ARMOR_SETS.update(hum_orcgear.ORC_SETS)
 hum_robe.NO_RANDOM.update(hum_orcgear.ORC_SETS)           # the orcs' own: never on random people
+import hum_skeleton                                       # noqa: E402  (the undead's bones: its own maker, built
+GARMENTS.update(hum_skeleton.SKELETON)                    # for the Undead builds only; reload it before this module)
 
 
 # ------------------------------------------------------------------ objects

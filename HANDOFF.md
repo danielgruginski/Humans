@@ -77,6 +77,13 @@
   `add_shape_keys` (it clears every key). New sliders are appended to `SLIDERS` and marked `PRESET_ONLY` unless
   every human should roll them: a rolled slider is a random draw, and a new draw shifts every seeded face after it
   (the game's named NPCs would all change). The C# generator skips `presetOnly` sliders the same way.
+- The undead's shapes live in `hum_undead.DEFORMS` (hum_faces' `_bound` pulls them in on first use). A garment with a
+  `make` (the Skeleton) builds its own LODs in `build_wardrobe`; `builds` limits it to those build names. The skeleton's
+  rays start inside the body and go out (a cast back from outside met the arms first and the ribs reached out to them);
+  the body ends at the neck, so its BVH includes the head's skin for the cervical spine.
+- Blender image pixels changed in a session need `img.update()` before EEVEE shows them.
+- Unity: `HumanSetup.ConfigureModel` reimports a model only when a setting changes. Reimporting every ~600 MB of cloth
+  FBX on each rebuild ran the editor out of memory once (after a 2-day editor session), killing the rebuild.
 - `hum_orcgear` sets `hum_plate.STYLES["Orc"]` when imported: reloading hum_plate drops it, so reload hum_orcgear (and
   then hum_cloth) after hum_plate; its builds hold the style object (`hum_orcgear.STYLE`), not a lookup.
 - `HumanRig` carries the Hum_Idle action: a preview poses the arms down (not the A pose) until it is cleared.
@@ -378,7 +385,31 @@ Done: head + eyes, stylisation, UVs, paint masks, preview shader, 98 keys, rando
   magister's (Game README). Checked in play mode: Vane in the tower, the shop rows, the player in the apprentice's
   robe. Renders `renders/robe_*.png`, `renders/robe_unity_*.png`.
 
+- 2026-10-10: **the undead** (Daniel: "do the same [as the orcs], but with zombies and skeletons"; his picks: rotting
+  villagers, models + the Unity install; README "The undead"). Undead builds + six new preset-only keys (in place),
+  all 65 human garments built for MUndead/FUndead, rot masks, torn clothes in the cloth shader, the Zombie and Skeleton
+  presets, the skeleton garment (`hum_skeleton`). Exported (every cloth family + Human_Cloth_Undead.fbx), installed in
+  MedievalSetting, prefab rebuilt (685 pieces); checked in Unity in edit mode and walking (Logs/Undead). Not committed.
+  Daniel later said he expected the zombies first and had been eyeing an Asset Store pack; the skeleton is fine "if it is
+  low poly" (8.5k / 3.4k / 2.0k).
+
+- 2026-10-11: **zombie clips** (Daniel: "can you give them animations like limping or having a hard time walking? also,
+  slam attacks for zombies, or bite attacks, Skeletons could use the human animations though" - he raised own clips
+  again himself, for the zombies). `hum_zombie_anim.py`: Idle, Limp, Shamble, Slam, Bite (README "Zombie clips"),
+  exported, Humans_Motion states 21-25, checked in Unity play mode (frozen frames). Not committed.
+
 ## Open / next
+
+- Zombie clips: not in the game yet - zombies aren't creatures; a creature would take them through a clip set
+  (CreatureAnim's BeastAnimationSet-style pools: Idle, Walk = Limp or Shamble, Slam, Bite; Hit and Death from the
+  human clips). A long dress flares up when the slam doubles the zombie over (the skirt ring pushed by the deep knee
+  bend). The reaching arms are straight-ish IK (no wrist/finger animation beyond the claw); the bite has no jaw (no
+  jaw bone).
+- Undead: from the game camera the zombies' painted holes read as light speckles more than tears (fewer, bigger rips
+  and more ragged hems would read better); the hunch is mild under the walk clip (no zombie clips: bought Humanoid packs
+  would carry the shamble); skeletons in full shirts still show a body's volume (rags, belts, mail and helms read better
+  than whole clothes); the skull keeps the stylised head's big cranium (capped at 1.12 x its width). No game creatures
+  yet (that comes with the barrows/crypts).
 
 - Robes: no hood (the first proposal had one up or down) and a sash rather than a rope belt. Looking down into
   the neckline from close above shows a thin dark line of the robe's inside between skin and binding (any shell

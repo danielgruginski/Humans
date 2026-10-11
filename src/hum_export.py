@@ -54,8 +54,11 @@ def cloth_family(garment):
     import hum_plate
     import hum_robe
     import hum_orcgear
+    import hum_skeleton
     if garment in hum_orcgear.ORC:                     # the orcs' gear: its own file (fur, hide, crude iron)
         return "Orc"
+    if garment in hum_skeleton.SKELETON:               # the undead's bones
+        return "Undead"
     if garment in hum_cloak.CLOAK:
         return "Cloak"
     if garment in hum_robe.ROBE:
@@ -229,7 +232,7 @@ def _skirt_slack(garment):
 
 
 def export_config():
-    import hum_cloak, hum_orcs
+    import hum_cloak, hum_orcs, hum_undead
     F = hum_faces
     cfg = dict(
         sliders=[dict(name=n, hasNeg=neg is not None, presetOnly=n in F.PRESET_ONLY,
@@ -272,7 +275,9 @@ def export_config():
         hairStyles=[dict(name=k or "", masc=v[0], fem=v[1]) for k, v in F.HAIR_W.items()],
         beardStyles=[dict(name=k or "", w=v) for k, v in F.BEARD_W.items()],
         browStyles=[dict(name=k, masc=v[0], fem=v[1]) for k, v in F.BROW_W.items()],
-        presets=[hum_orcs.export(p) for p in hum_orcs.PRESETS],          # face presets over a rolled face (orcs)
+        # face presets over a rolled face: the orcs, the undead (zombie, skeleton)
+        presets=[hum_orcs.export(p) for p in hum_orcs.PRESETS] + [hum_undead.export(p) for p in hum_undead.PRESETS],
+        bone=hum_undead.BONE,                                              # the skeleton's colour group "Bone"
         shader=dict(shadeMax=hum_paint.SHADE_MAX, blushTint=list(hum_material.BLUSH_TINT[:3]),
                     freckleTint=list(hum_material.FRECKLE_TINT[:3]), lipFromTone=list(hum_material.LIP_FROM_TONE),
                     edgeDark=hum_material.EDGE_DARK),

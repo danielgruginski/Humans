@@ -92,14 +92,22 @@ SLIDERS = [
     ("Traps", "@traps", None),
     ("ArmsOut", "@arms_out", None),
     ("ArmBulk", "@arm_bulk", None),
+    # 2026-10-10, the undead (hum_undead): starved and hunched bodies (the Undead builds), sunken eyes and hollow
+    # cheeks (the zombies' face). Our own shapes, in hum_undead.DEFORMS; appended and PRESET_ONLY like the orcs'.
+    ("Hunch", "@hunch", None),
+    ("Ribs", "@ribs", None),
+    ("Sunken", "@sunken", None),
+    ("Bony", "@bony", None),
+    ("EyeSunken", "@eye_sunken", None),
+    ("Gaunt", "@gaunt", None),
 ]
 BODY_SLIDERS = ["ArmMuscle", "ShoulderMuscle", "LegMuscle", "ChestMuscle", "BackMuscle", "VShape",
                 "ShoulderWidth", "Waist", "Hips", "Bust", "Belly",
                 "NeckThick", "NeckForward", "UpperArmSize", "ForearmSize", "HandSize", "TorsoDepth", "LegLength",
-                "NeckLength", "ChestWide", "Traps", "ArmsOut", "ArmBulk"]
+                "NeckLength", "ChestWide", "Traps", "ArmsOut", "ArmBulk", "Hunch", "Ribs", "Sunken", "Bony"]
 PRESET_ONLY = {"JawWide", "BrowHeavy", "Underbite", "EarLow", "NeckThick", "NeckForward", "UpperArmSize",
                "ForearmSize", "HandSize", "TorsoDepth", "LegLength", "NeckLength", "ChestWide", "Traps", "ArmsOut",
-               "ArmBulk"}
+               "ArmBulk", "Hunch", "Ribs", "Sunken", "Bony", "EyeSunken", "Gaunt"}
 MUSCLE_SLIDERS = ["ArmMuscle", "ShoulderMuscle", "LegMuscle", "ChestMuscle", "BackMuscle", "VShape"]
 
 # macro keys: name -> (macros, race)
@@ -329,6 +337,9 @@ def _bound(st, rig, sk):
     if "deform" not in st:
         return st
     st = dict(st)
+    if st["deform"] not in DEFORMS:                    # the undead's shapes live in hum_undead
+        import hum_undead
+        DEFORMS.update(hum_undead.DEFORMS)
     fn = DEFORMS[st.pop("deform")]
     st["deform"] = lambda C: fn(C, rig, sk)
     return st
@@ -752,6 +763,7 @@ def apply_face(ob, face, lod=0):
             hum_material.set_body_props(body, p.get("tone", (0.62, 0.40, 0.30)), p.get("blush", 0.5),
                                         p.get("freckles", 0.0), face.get("cloth", (0.55, 0.47, 0.38)),
                                         0.0 if face.get("masc", True) else 1.0, hide)
+        body["hum_rot"] = tuple(face.get("rot", (0.0, 0.0, 0.0)))     # the undead (hum_undead); 0 = living
     arm = bpy.data.objects.get("HumanRig")
     hum_rig.pose_for_keys(arm, bkeys)
     ccol = bpy.data.collections.get("HUM_Cloth" if lod == 0 else f"HUM_LOD{lod}")
@@ -768,10 +780,16 @@ def apply_face(ob, face, lod=0):
                 _set_keys(co, face["keys"])
                 co["hum_color"] = tuple(outfit[g])
                 co["hum_hide"] = float(layer_hide[g])
+                torn = hum_cloth.GARMENTS[g].get("material") not in ("plate", "bone")
+                co["hum_tat"] = (float(face.get("tatter", 0.0)) * torn, float(face.get("tatter_cut", 0.0)), 0.0)
+                co["hum_skin"] = tuple(face["props"].get("tone", (0.6, 0.4, 0.3)))
+                co["hum_glow"] = tuple(face.get("glow", (0.2, 0.8, 0.7)))      # a skeleton's orbits
     if arm is not None and hum_rig.HEIGHT_RATIOS:
         s = height_scale(face.get("height", 0.0), hum_rig.HEIGHT_RATIOS)
         arm.scale = (s, s, s)      # (hum_rig.hips_lift is for Unity's Humanoid Animator; posed bones need none)
     hum_material.set_props(ob, **face["props"])
+    ob["hum_rot"] = tuple(face.get("rot", (0.0, 0.0, 0.0)))
+    ob["hum_milk"] = float(face.get("milk", 0.0))
     if lod >= 2:
         hum_material.set_props(ob, brows=0.8)          # no brow geometry at the colony camera
     col = bpy.data.collections.get("HUM_Hair" if lod == 0 else f"HUM_LOD{lod}")

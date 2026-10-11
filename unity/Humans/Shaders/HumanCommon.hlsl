@@ -54,6 +54,24 @@ HVaryings HumanVert(HAttributes v)
     return o;
 }
 
+// The undead's rot (hum_undead, hum_material._rot in Blender): rot mask R blotches, G and B the two wound sets,
+// A hollows; rot 0 (the living) leaves the colour alone. wet: how much of a wound is there (glossier).
+static const half3 ROT_TINT = half3(0.55, 0.50, 0.52);
+static const half ROT_HOLLOW = 0.6;
+static const half3 WOUND_RIM = half3(0.30, 0.10, 0.08);
+static const half3 WOUND_CORE = half3(0.06, 0.012, 0.01);
+
+half3 HumanRot(half3 col, half4 r, half rot, half2 wounds, out half wet)
+{
+    col = lerp(col, col * ROT_TINT, r.r * rot);
+    col *= 1 - ROT_HOLLOW * r.a * rot;
+    half w = max(r.g * wounds.x, r.b * wounds.y) * step(0.001, rot);
+    wet = smoothstep(0.12, 0.45, w);
+    col = lerp(col, WOUND_RIM, wet);
+    col = lerp(col, WOUND_CORE, smoothstep(0.5, 0.85, w));
+    return col;
+}
+
 half4 HumanShadePBR(HVaryings i, half3 albedo, half metallic, half smoothness, half occlusion);
 
 half4 HumanShade(HVaryings i, half3 albedo, half smoothness)

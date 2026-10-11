@@ -584,3 +584,61 @@ no orc gear), shipped in `Human_Cloth_Orc.fbx`:
   in `hum_robe.NO_RANDOM` (never on random people). LOD0 triangles: mantle 1.9-2.2k, kilt 1.2k, cuirass 2.6k,
   pauldrons 1.6k, legs 2.1k, helm 2.5k (L1 280-760).
 
+
+## The undead: zombies and skeletons (`src/hum_undead.py`, `src/hum_skeleton.py`, 2026-10-10)
+
+Like the orcs, the human made into something else (Daniel: "do the same, but with zombies and skeletons"; his picks:
+rotting villagers, models + the Unity install).
+
+- **Undead builds** `MUndead` / `FUndead` (`hum_builds`, odds 0): starved and hunched - thin and slight at full, wasted
+  muscles, a scrawny neck carried forward - plus preset-only body keys of our own (`hum_undead.DEFORMS`): **Hunch**
+  (shoulders rolled forward and down and the head carried low and forward, as bone offsets that survive Humanoid clips;
+  a rounded upper back), **Ribs** (the lower ribcage's barrel), **Sunken** (the belly sunk under the ribcage's edge),
+  **Bony** (collarbones); face keys **EyeSunken** and **Gaunt** (hollow cheeks and temples). Added in place like the
+  orcs' (`hum_faces.add_keys` + `hum_orcs.propagate_keys`). Every human garment (65) is built for them; the ribs are
+  painted, not modelled (1.5 cm body edges against 2.6 cm ribs aliased into ripples).
+- **Rot** (zombies): `T_Head_Rot` / `T_Body_Rot` (`paint_rot_head` / `paint_rot_body`): R blotches (heavier on hands,
+  feet, shins), G and B two wound sets (cheek gash / scalp and jaw bite; forearm bite, belly gash, shoulder / thigh,
+  flank, arm, calf), A hollows (sockets, cheeks, temples; painted ribs on the same lines as the Ribs key, the ribcage's
+  edge, collarbone pits, the spine's knobs). Skin and body shaders take `_Rot` and `_Wounds` (HumanRot in
+  HumanCommon.hlsl; rot 0 = the living, unchanged). Eyes: `_Milk` fades the iris and pupil (clouded).
+- **Torn clothes**: `T_Cloth_Tatter` (equalised hole field, dirt, fray; tiling) projected in 3D from each garment's rest
+  position; Humans/Cloth `_Tatter`, `_TatterCut`, `_Skin`: holes where the field is under `_Tatter * 0.17` (twice that
+  when cut), hems first, a dark frayed rim, dirt. Zombies: the holes are painted with the skin, shadowed under the edge.
+  Skeletons: cut out (the bones show through), clipped in the depth and shadow passes too. Plate and bone never tear.
+- **Skeleton** (`hum_skeleton`): a garment "Skeleton" (slot `skeleton`, material `bone`, its own maker in
+  `build_wardrobe`, Undead builds only) that hides every body region and the head. Measured off the build: skull,
+  mandible and pelvis sculpted as distance fields (openvdb) and decimated to budgets, teeth as blocks, 24 vertebrae, 9
+  rib pairs (the barrel's shape off the skin, upper ribs smaller at the sides) and a sternum, clavicles, shoulder
+  blades, every long bone lofted, every phalanx on its own finger bone; all pieces rigid on one bone. A cold light in
+  each orbit (material slot 1, Humans/Glow, colour per character). 8.5k / 3.4k / 2.0k triangles (LOD0-2; a human's
+  body + head is 27.8k / 7.4k / 3.2k), LODs rebuilt from the recipe at lower resolution. `Human_Cloth_Undead.fbx`.
+- **Presets** `Zombie` (gaunt face sliders, livid grey-green tones, bluish lips, milky irises, thin hair, rot 0.65-1,
+  wound sets 70 % / 55 %, tatter 0.35-0.75 painted; the rolled villager's beard and clothes stay) and `Skeleton`
+  (wears the Skeleton, tatter 0.5-0.9 cut, glow colours), both on the Undead build. Exported in the config with the new
+  fields (`lipFromTone`, `rot*`, `woundChance`, `milk*`, `tatter*`, `tatterCut`, `wear`, `glow`); Unity
+  `HumanFaceGenerator.ApplyPreset` rolls them after the old draws (orcs unchanged) and puts the worn garments on, so set
+  the outfit first. HumanFaceData: `rot`, `wounds`, `milk`, `tatter`, `tatterCut`, `glow`.
+- Preview in Blender: `hum_faces.apply_face(head, hum_undead.undead_face(seed[, hum_undead.SKELETON]))`;
+  `hum_undead.refresh_materials()` rebuilds the shared node trees (rot, milk, tatter). Unity checks:
+  `MedievalSetting/Logs/Undead` (lineup, game camera, walking).
+
+### Zombie clips (`src/hum_zombie_anim.py`, 2026-10-11)
+
+Daniel asked for limping / struggling walks, slam and bite attacks for the zombies (skeletons use the human clips).
+Our own machinery (hum_anim: Pose, two-bone IK, spline keys), Unity Humanoid, in place, 30 fps; registered with
+hum_anim (CLIPS / BUILD / SPEED), so `hum_anim.export_clips(list(hum_zombie_anim.BUILD))` writes `Human@Zombie_*.fbx`
+and human_clips.json carries them. Unity: Humans_Motion states 21-25 (the old numbers unchanged), creator buttons
+"Z Idle" .. "Z Bite".
+
+| Clip | Frames | What |
+|---|---|---|
+| Zombie_Idle | 150, loop | hunched, weight on the good right leg, the bad left one on its toes; uneven breathing, lolling head, two twitches |
+| Zombie_Limp | 48, loop, 0.5 m/s | the left leg dead weight: a short stance with the body dropping 8 cm and lurching over it, then dragged forward toe-down, swung out round the hip; the right leg's quick step; the right arm reaches, the left swings late |
+| Zombie_Shamble | 44, loop, 0.6 m/s | stiff-kneed shuffle (3 cm lifts), rocking leg to leg, uneven steps, both arms reaching (the left lower) |
+| Zombie_Slam | 54, once | gather, rise and arch back with both fists high, hang, the whole body down onto the target (impact 0.52), bounce, back to idle |
+| Zombie_Bite | 54, once | lunge with a step in, claws out at shoulder height, grab, pull in, the head darts in (impact 0.46), two tearing shakes, shove off |
+
+Reaching arms are IK targets from each shoulder in the character's frame (`reach`): FK "down/swing" angles and targets in
+the leaning chest's frame pointed them sideways or at the knees. `HITS` has the impact times for a game's hit events.
+Checks: renders/_tmp/zanim_*.png (Blender strips), MedievalSetting/Logs/Undead/zanim_*.png (Unity, frozen frames).

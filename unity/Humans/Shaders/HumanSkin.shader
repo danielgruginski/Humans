@@ -1,5 +1,6 @@
 // Human skin: painted masks coloured per character (same maths as hum_material.py in Blender).
 // Per-character values come from a MaterialPropertyBlock (HumanFace), so every head shares one material.
+// The undead: _Rot / _Wounds over the rot mask (HumanRot in HumanCommon).
 Shader "Humans/Skin"
 {
     Properties
@@ -7,6 +8,7 @@ Shader "Humans/Skin"
         [NoScaleOffset] _MaskA ("Mask A (blush, lips, shading, lash)", 2D) = "black" {}
         [NoScaleOffset] _MaskB ("Mask B (stubble, age, freckles, brows)", 2D) = "black" {}
         [NoScaleOffset] _MaskC ("Mask C (hairline, beard area)", 2D) = "black" {}
+        [NoScaleOffset] _RotMask ("Rot (blotches, wounds A, wounds B, hollows)", 2D) = "black" {}
         _Tone ("Skin tone", Color) = (0.81, 0.59, 0.44, 1)
         _Lip ("Lip", Color) = (0.74, 0.47, 0.40, 1)
         _Hair ("Hair (brows, stubble, hairline)", Color) = (0.23, 0.15, 0.09, 1)
@@ -18,6 +20,8 @@ Shader "Humans/Skin"
         _Brows ("Painted brows", Range(0, 1)) = 0.25
         _Scalp ("Hairline tint", Range(0, 1)) = 0
         _BeardShadow ("Beard shadow", Range(0, 1)) = 0
+        _Rot ("Rot (undead)", Range(0, 1)) = 0
+        _Wounds ("Wound sets (x, y)", Vector) = (0, 0, 0, 0)
         _Smoothness ("Smoothness", Range(0, 1)) = 0.45
     }
     SubShader
@@ -48,9 +52,11 @@ Shader "Humans/Skin"
             TEXTURE2D(_MaskA); SAMPLER(sampler_MaskA);
             TEXTURE2D(_MaskB); SAMPLER(sampler_MaskB);
             TEXTURE2D(_MaskC); SAMPLER(sampler_MaskC);
+            TEXTURE2D(_RotMask); SAMPLER(sampler_RotMask);
             CBUFFER_START(UnityPerMaterial)
                 half4 _Tone, _Lip, _Hair, _Lash;
-                half _Blush, _Freckles, _Stubble, _Age, _Brows, _Scalp, _BeardShadow, _Smoothness;
+                half _Blush, _Freckles, _Stubble, _Age, _Brows, _Scalp, _BeardShadow, _Smoothness, _Rot;
+                half4 _Wounds;
             CBUFFER_END
 
             static const half SHADE_MAX = 1.25;
@@ -72,10 +78,12 @@ Shader "Humans/Skin"
                 col *= 1 - b.g * _Age * 0.25;
                 col = lerp(col, hair * 0.8, b.a * _Brows);
                 col = lerp(col, _Lash.rgb, a.a);
+                half wet;
+                col = HumanRot(col, SAMPLE_TEXTURE2D(_RotMask, sampler_RotMask, i.uv.xy), _Rot, _Wounds.xy, wet);
                 col *= a.b * SHADE_MAX;
                 col = lerp(col, lerp(col, hair * 0.9, 0.75), c.r * _Scalp);
                 col = lerp(col, lerp(col, hair * 0.8, 0.5), c.g * _BeardShadow);
-                return HumanShade(i, col, _Smoothness);
+                return HumanShade(i, col, lerp(_Smoothness, 0.6, wet));
             }
             ENDHLSL
         }
