@@ -634,8 +634,8 @@ and human_clips.json carries them. Unity: Humans_Motion states 21-25 (the old nu
 | Clip | Frames | What |
 |---|---|---|
 | Zombie_Idle | 150, loop | hunched, weight on the good right leg, the bad left one on its toes; uneven breathing, lolling head, two twitches |
-| Zombie_Limp | 48, loop, 0.5 m/s | the left leg dead weight: a short stance with the body dropping 8 cm and lurching over it, then dragged forward toe-down, swung out round the hip; the right leg's quick step; the right arm reaches, the left swings late |
-| Zombie_Shamble | 44, loop, 0.6 m/s | stiff-kneed shuffle (3 cm lifts), rocking leg to leg, uneven steps, both arms reaching (the left lower) |
+| Zombie_Limp | 40, loop, 0.75 m/s | the left leg dead weight: a short stance with the body dropping 8 cm and lurching over it, then dragged forward toe-down, swung out round the hip; the right leg's quick step; the right arm reaches, the left swings late |
+| Zombie_Shamble | 40, loop, 0.85 m/s | stiff-kneed shuffle (4 cm lifts), rocking leg to leg, uneven steps, both arms reaching (the left lower) |
 | Zombie_Slam | 54, once | gather, rise and arch back with both fists high, hang, the whole body down onto the target (impact 0.52), bounce, back to idle |
 | Zombie_Bite | 54, once | lunge with a step in, claws out at shoulder height, grab, pull in, the head darts in (impact 0.46), two tearing shakes, shove off |
 

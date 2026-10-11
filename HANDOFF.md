@@ -389,14 +389,17 @@ Done: head + eyes, stylisation, UVs, paint masks, preview shader, 98 keys, rando
   villagers, models + the Unity install; README "The undead"). Undead builds + six new preset-only keys (in place),
   all 65 human garments built for MUndead/FUndead, rot masks, torn clothes in the cloth shader, the Zombie and Skeleton
   presets, the skeleton garment (`hum_skeleton`). Exported (every cloth family + Human_Cloth_Undead.fbx), installed in
-  MedievalSetting, prefab rebuilt (685 pieces); checked in Unity in edit mode and walking (Logs/Undead). Not committed.
+  MedievalSetting, prefab rebuilt (685 pieces); checked in Unity in edit mode and walking (Logs/Undead). Pushed as 2730c31.
   Daniel later said he expected the zombies first and had been eyeing an Asset Store pack; the skeleton is fine "if it is
   low poly" (8.5k / 3.4k / 2.0k).
 
 - 2026-10-11: **zombie clips** (Daniel: "can you give them animations like limping or having a hard time walking? also,
   slam attacks for zombies, or bite attacks, Skeletons could use the human animations though" - he raised own clips
   again himself, for the zombies). `hum_zombie_anim.py`: Idle, Limp, Shamble, Slam, Bite (README "Zombie clips"),
-  exported, Humans_Motion states 21-25, checked in Unity play mode (frozen frames). Not committed.
+  exported, Humans_Motion states 21-25, checked in Unity play mode (frozen frames). Pushed with the undead (2730c31).
+  Later that day, when they became game creatures (MedievalSetting's Shepherd Downs and the Hollow Barrow): Limp and
+  Shamble re-timed to 40 frames at 0.75 / 0.85 m/s, the speeds the game moves them at, so their feet do not slide
+  (Shamble's shuffle lifts 4 cm); re-exported and copied to MedievalSetting.
 
 ## Open / next
 

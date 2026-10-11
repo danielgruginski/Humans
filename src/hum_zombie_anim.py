@@ -6,10 +6,10 @@ BUILD so export_clips writes them like any clip (Human@Zombie_*.fbx):
 
 Zombie_Idle      hunched, weight sunk on the good (right) leg, the bad one resting on its toes; slow uneven breathing,
                  the head lolling, a twitch now and then; arms hanging forward, the right hand clawed
-Zombie_Limp      0.5 m/s: the left leg is dead weight - a short, painful stance with the body dropping and lurching over
+Zombie_Limp      0.75 m/s: the left leg is dead weight - a short, painful stance with the body dropping and lurching over
                  it, then dragged forward stiff, toe scraping the ground, swung out to the side; the good leg hurries
                  through a quick step; the right arm reaches, the left hangs and swings late
-Zombie_Shamble   0.6 m/s: stiff-kneed shuffle, feet barely leaving the ground, the whole body rocking from leg to leg,
+Zombie_Shamble   0.85 m/s: stiff-kneed shuffle, feet barely leaving the ground, the whole body rocking from leg to leg,
                  the steps uneven; both arms reaching forward (the left lower), head forward and up
 Zombie_Slam      a two-fisted hammer: rise and arch back with both fists high over the head, hang, then the whole body
                  jackknifes down onto the target (impact 0.52), a bounce, and back to the idle pose
@@ -27,9 +27,9 @@ from mathutils import Quaternion, Vector
 import hum_anim as A
 from hum_anim import Pose, eul, lerp, ss, FWD, LEFT, UP
 
-CLIPS = {"Zombie_Idle": (150, True, True), "Zombie_Limp": (48, True, True), "Zombie_Shamble": (44, True, True),
+CLIPS = {"Zombie_Idle": (150, True, True), "Zombie_Limp": (40, True, True), "Zombie_Shamble": (40, True, True),
          "Zombie_Slam": (54, False, True), "Zombie_Bite": (54, False, True)}
-SPEED = {"Zombie_Limp": 0.5, "Zombie_Shamble": 0.6}
+SPEED = {"Zombie_Limp": 0.75, "Zombie_Shamble": 0.85}    # (the game moves zombies at these: 2026-10-11, first 0.5 / 0.6)
 HITS = {"Zombie_Slam": 0.52, "Zombie_Bite": 0.46}        # normalized impact times (a game's hit events)
 
 STANCE_X = 0.115
@@ -242,7 +242,7 @@ def clip_shamble(rig, t):
         else:
             u = (ph - stance) / (1 - stance)
             y = lerp(c + D / 2, c - D / 2, ss(0, 1, u))
-            z = a.z + 0.03 * math.sin(math.pi * u)            # a shuffle
+            z = a.z + 0.04 * math.sin(math.pi * u)            # a shuffle
             pitch = lerp(14, 0, ss(0, 0.7, u))
         # stiff knees: the knee points forward but the ankle stays far from the hip (little bend)
         p.leg(s, Vector((sx * (STANCE_X + 0.015), y, z)), knee_dir=FWD + LEFT * sx * 0.25, foot=eul(pitch=pitch, yaw=sx * 12),
