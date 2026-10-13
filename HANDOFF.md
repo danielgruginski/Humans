@@ -333,7 +333,10 @@ Done: head + eyes, stylisation, UVs, paint masks, preview shader, 98 keys, rando
   capsules are now read once a frame (they were read per column, point and pass: thousands of transform reads a
   step), at most two steps a frame (it had caught up to four, so a slow frame made the next slower), and it rests
   while none of the character's skinned meshes is drawn (off screen and out of the shadows; it starts afresh when
-  seen). Installed into MedievalSetting by copying the script.
+  seen). Installed into MedievalSetting by copying the script. The same evening `HumanSpringChain` (the cape's links:
+  the same pattern, much smaller -- 3 links against 6 capsules, about 300 transform reads a frame per cloak, on screen
+  or not, catching up to four steps) got the same treatment: only while drawn, the capsules read once a frame, the
+  link lengths once a frame, at most two steps.
 - Then "everything that has a skirt like item ... broking into pieces": the ring only took skirt rows with some
   pelvis weight, but `skirt_shell` garments (Tunic, Coat, Jerkin and what's built on them: Hauberk, Cuirass,
   StuddedCoat, Gambeson) weight their skirts' sides like trousers - half of each skirt hung from the ring, half

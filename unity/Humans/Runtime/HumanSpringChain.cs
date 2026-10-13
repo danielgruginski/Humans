@@ -7,7 +7,8 @@ namespace Humans
     /// A cape's spring chain (xh_cape_0..2, down the back of a cloak or cape): Verlet points along the links,
     /// pulled toward the hanging pose, with gravity, damping and collision capsules on the spine, pelvis and legs;
     /// the links then turn to follow the points. Runs after the Animator and HumanHelperBones, at a fixed 60 Hz,
-    /// so the cape trails when the character runs or turns and settles back when it stops.
+    /// so the cape trails when the character runs or turns and settles back when it stops. Cheap enough for a crowd
+    /// (2026-10-12, as HumanSkirt): only while drawn, the capsules read once a frame, at most two steps a frame.
     /// HumanSetup fills it from human_rig.json (hum_helpers.CAPE in Blender, where the chain is rigid).
     /// </summary>
     [DefaultExecutionOrder(200)]
@@ -35,8 +36,13 @@ namespace Humans
 
         const float Step = 1f / 60f;
         Vector3[] pos, prev, target;
+        float[] linkLen;
         float acc;
         bool live;
+        Vector3[] capA = Array.Empty<Vector3>(), capB = Array.Empty<Vector3>();
+        bool[] capOn = Array.Empty<bool>();
+        SkinnedMeshRenderer[] drawn = Array.Empty<SkinnedMeshRenderer>();
+        float drawnAt = -10f;
 
         void OnEnable() { live = false; }
 
@@ -46,21 +52,50 @@ namespace Humans
                 if (bones[i] != null) bones[i].localRotation = restLocal[i];
         }
 
+        /// <summary>any of the character's skinned meshes drawn this frame (by a camera or a shadow); the list is looked
+        /// up again every 2 s (garments come and go)</summary>
+        bool Drawn()
+        {
+            if (Time.unscaledTime - drawnAt > 2f || drawn.Length == 0)
+            {
+                drawn = GetComponentsInChildren<SkinnedMeshRenderer>(false);
+                drawnAt = Time.unscaledTime;
+            }
+            if (drawn.Length == 0) return true;                         // nothing to judge by: as before
+            foreach (var r in drawn) if (r != null && r.enabled && r.isVisible) return true;
+            return false;
+        }
+
         void LateUpdate()
         {
             int n = bones.Length;
             if (n == 0 || restLocal.Length != n || bones[0] == null) return;
+            if (!Drawn()) { live = false; return; }                     // unseen: it stays as it was (afresh when seen)
             if (target == null || target.Length != n + 1)
             {
                 target = new Vector3[n + 1];
                 pos = new Vector3[n + 1];
                 prev = new Vector3[n + 1];
+                linkLen = new float[n + 1];
                 live = false;
             }
             // the hanging pose: the links at rest on whatever the animation did to the spine
             for (int i = 0; i < n; i++) bones[i].localRotation = restLocal[i];
             for (int i = 0; i < n; i++) target[i] = bones[i].position;
             target[n] = bones[n - 1].TransformPoint(tipLocal);
+            for (int i = 1; i <= n; i++) linkLen[i] = (target[i] - target[i - 1]).magnitude;
+            if (capA.Length != colliders.Length)
+            {
+                capA = new Vector3[colliders.Length]; capB = new Vector3[colliders.Length]; capOn = new bool[colliders.Length];
+            }
+            for (int i = 0; i < colliders.Length; i++)                   // the body where the animation put it
+            {
+                var c = colliders[i];
+                capOn[i] = c.a != null && c.b != null;
+                if (!capOn[i]) continue;
+                capA[i] = c.a.position;
+                capB[i] = c.b.position;
+            }
             if (!live || (pos[0] - target[0]).sqrMagnitude > 4f)       // first frame or a teleport
             {
                 Array.Copy(target, pos, n + 1);
@@ -68,7 +103,7 @@ namespace Humans
                 acc = 0f;
                 live = true;
             }
-            acc = Mathf.Min(acc + Time.deltaTime, 4 * Step);
+            acc = Mathf.Min(acc + Time.deltaTime, 2 * Step);             // a slow frame asks for no more work than two steps
             while (acc >= Step)
             {
                 acc -= Step;
@@ -99,19 +134,18 @@ namespace Humans
             {
                 for (int i = 1; i <= n; i++)                            // links keep their length
                 {
-                    float len = (target[i] - target[i - 1]).magnitude;
                     var d = pos[i] - pos[i - 1];
-                    pos[i] = pos[i - 1] + (d.sqrMagnitude > 1e-10f ? d.normalized : (target[i] - target[i - 1]).normalized) * len;
+                    pos[i] = pos[i - 1] + (d.sqrMagnitude > 1e-10f ? d.normalized : (target[i] - target[i - 1]).normalized) * linkLen[i];
                 }
                 for (int i = 1; i <= n; i++)                            // and stay out of the body
-                    foreach (var c in colliders)
+                    for (int k = 0; k < colliders.Length; k++)
                     {
-                        if (c.a == null || c.b == null) continue;
-                        Vector3 a = c.a.position, ab = c.b.position - a;
+                        if (!capOn[k]) continue;
+                        Vector3 a = capA[k], ab = capB[k] - a;
                         float t = Mathf.Clamp01(Vector3.Dot(pos[i] - a, ab) / Mathf.Max(ab.sqrMagnitude, 1e-8f));
                         var q = a + ab * t;
                         var d = pos[i] - q;
-                        float r = c.radius + thickness;
+                        float r = colliders[k].radius + thickness;
                         if (d.sqrMagnitude < r * r)
                             pos[i] = q + (d.sqrMagnitude > 1e-10f ? d.normalized : -transform.forward) * r;
                     }
