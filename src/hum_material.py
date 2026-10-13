@@ -287,13 +287,16 @@ TATTER_HOLES = 0.17        # hole area at tatter 1 (the hems tear more)
 TATTER_FRAY = 0.22         # ragged edges: the fine fray noise added to the hole field
 TATTER_HEM = 0.6           # hems tear first (ClothData.g)
 TATTER_RIM = 0.035         # the frayed, darker cloth round a hole (in hole-field units)
+TATTER_RAG_TILE = 5.0      # rags (ClothData.a = 1 - rag, hum_rags): the field's tile this much larger at rag 1 (fewer,
+                           # bigger rips than the undead's speckles)
 
 
-def _tatter(T, c, hem):
+def _tatter(T, c, hem, rag=None):
     """Torn, dirty clothes (the undead; hum_undead.tatter_texture): hum_tat = (tatter, cut, 0). Holes where the
     equalised hole field is under tatter * TATTER_HOLES (hems tear first); cut 1 cuts them out (a skeleton's rags:
-    the bones show), cut 0 paints the skin under them (hum_skin, a zombie). Returns (colour, keep factor) or
-    (colour, None) without the texture."""
+    the bones show), cut 0 paints the skin under them (hum_skin, a zombie). Rags (rag: a socket, 1 - ClothData.a)
+    tear at least that much on anyone, over a coarser field. Returns (colour, keep factor) or (colour, None)
+    without the texture."""
     tex = bpy.data.images.get("T_Cloth_Tatter")
     if tex is None:
         return c, None
@@ -304,13 +307,20 @@ def _tatter(T, c, hem):
     comb = T.node('ShaderNodeCombineXYZ')
     T.link(x, comb.inputs[0]); T.link(y, comb.inputs[1]); T.link(z, comb.inputs[2])
     sc = T.node('ShaderNodeVectorMath'); sc.operation = 'SCALE'
-    T.link(comb.outputs[0], sc.inputs[0]); sc.inputs['Scale'].default_value = 1.0 / TATTER_TILE
+    T.link(comb.outputs[0], sc.inputs[0])
+    if rag is None:
+        sc.inputs['Scale'].default_value = 1.0 / TATTER_TILE
+    else:                                                                  # rags: a coarser field
+        T.link(T.math('DIVIDE', 1.0, T.math('MULTIPLY', TATTER_TILE, T.math('ADD', 1.0, T.math('MULTIPLY', rag, TATTER_RAG_TILE)))),
+               sc.inputs['Scale'])
     n = T.node('ShaderNodeTexImage'); n.image = tex; n.projection = 'BOX'; n.projection_blend = 0.3
     T.link(sc.outputs[0], n.inputs['Vector'])
     sep = T.node('ShaderNodeSeparateColor')
     T.link(n.outputs['Color'], sep.inputs[0])
     hole_f, dirt, fray = sep.outputs
     tat, cut, _ = T.split(T.attr("hum_tat"))
+    if rag is not None:                                                    # rags tear on the living too
+        tat = T.math('MAXIMUM', tat, rag)
     on = T.math('GREATER_THAN', tat, 0.0)
 
     def ss(a, b, v):
@@ -426,7 +436,7 @@ def cloth_material(pattern, name="M_HumanCloth", roughness=0.85):
     c = T.mix((0, 0, 0, 1), c, aof)
     c = T.mix(c, (0, 0, 0, 1), T.math('MULTIPLY', hem, 0.18))
     c = T.mix(c, T.mix((0, 0, 0, 1), METAL, aof), metal)
-    c, keep = _tatter(T, c, hem)
+    c, keep = _tatter(T, c, hem, rag=T.math('SUBTRACT', 1.0, vc.outputs['Alpha']))   # rags: ClothData.a = 1 - rag
     bsdf = T.node('ShaderNodeBsdfPrincipled')
     T.link(T.math('ADD', roughness, T.math('MULTIPLY', metal, 0.4 - roughness)), bsdf.inputs['Roughness'])
     bsdf.inputs['Specular IOR Level'].default_value = 0.25

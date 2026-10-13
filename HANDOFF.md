@@ -407,6 +407,17 @@ Done: head + eyes, stylisation, UVs, paint masks, preview shader, 98 keys, rando
   Shamble re-timed to 40 frames at 0.75 / 0.85 m/s, the speeds the game moves them at, so their feet do not slide
   (Shamble's shuffle lifts 4 cm); re-exported and copied to MedievalSetting.
 
+- 2026-10-12: **rags** (Daniel: "another clothing option for humans - rags. This will also be used to improve the zombie
+  clothing, naturally"). `hum_rags.py` (README "Rags"): RagShirt, RagTunic, RagTrousers on all ten builds, cut ragged
+  in the geometry and torn on the living too (ClothData alpha = 1 - rag; HumanCloth `_TatterRagTile`, a coarser hole
+  field: fewer, bigger rips). Exported `Human_Cloth_Rags.fbx` + config, installed in MedievalSetting with the shader
+  (prefab rebuilt, 30 rag pieces); its zombies and barrow skeletons wear them, and the character maker has two rag
+  outfits. Iterations Daniel didn't see: the shirt tucked under the trousers (offset grows by the hips), straight
+  edges (cut after the shell), an "underwear" hem following the crotch (a skirt-loft tail), crenellated steps
+  (`_tear_hem` moves vertices), regular teeth (random widths and notches), many small rips (RAG 0.32, tile x5),
+  the tunic's torso ending just above its skirt (a ring of what is under showed; now 4 cm below the hips).
+  Unity renders (the game's undead outfits, front mirrored, and from a game-like height): `renders/undead_rags_*.png`.
+
 ## Open / next
 
 - Zombie clips: not in the game yet - zombies aren't creatures; a creature would take them through a clip set
@@ -414,11 +425,16 @@ Done: head + eyes, stylisation, UVs, paint masks, preview shader, 98 keys, rando
   human clips). A long dress flares up when the slam doubles the zombie over (the skirt ring pushed by the deep knee
   bend). The reaching arms are straight-ish IK (no wrist/finger animation beyond the claw); the bite has no jaw (no
   jaw bone).
-- Undead: from the game camera the zombies' painted holes read as light speckles more than tears (fewer, bigger rips
-  and more ragged hems would read better); the hunch is mild under the walk clip (no zombie clips: bought Humanoid packs
+- Undead: from the game camera the zombies' painted holes read as light speckles more than tears (2026-10-12: the
+  rags answer it for the game's zombies - big rips, torn hems; whole clothes on a zombie still speckle); the hunch is mild under the walk clip (no zombie clips: bought Humanoid packs
   would carry the shamble); skeletons in full shirts still show a body's volume (rags, belts, mail and helms read better
-  than whole clothes); the skull keeps the stylised head's big cranium (capped at 1.12 x its width). No game creatures
+  than whole clothes; the game's skeletons wear rags since 2026-10-12); the skull keeps the stylised head's big cranium (capped at 1.12 x its width). No game creatures
   yet (that comes with the barrows/crypts).
+
+- Rags: the tunic's skirt top stands ~8 mm off its torso, so from above you see a little into the ring (the plain
+  Tunic's too); over a RagShirt a thin pale line of the shirt's tail shows there, like a waistband. The cuts are one
+  seeded shape per garment (every rag shirt has the same short right sleeve): a second seed would be another garment
+  (RagShirt2) or a per-character mirror.
 
 - Robes: no hood (the first proposal had one up or down) and a sash rather than a rope belt. Looking down into
   the neckline from close above shows a thin dark line of the robe's inside between skin and binding (any shell

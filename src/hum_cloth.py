@@ -814,6 +814,8 @@ hum_armor.ARMOR_SETS.update(hum_orcgear.ORC_SETS)
 hum_robe.NO_RANDOM.update(hum_orcgear.ORC_SETS)           # the orcs' own: never on random people
 import hum_skeleton                                       # noqa: E402  (the undead's bones: its own maker, built
 GARMENTS.update(hum_skeleton.SKELETON)                    # for the Undead builds only; reload it before this module)
+import hum_rags                                           # noqa: E402  (rags: torn in the geometry; reload it before
+GARMENTS.update(hum_rags.RAGS)                            # this module, like hum_robe)
 
 
 # ------------------------------------------------------------------ objects
@@ -1192,6 +1194,8 @@ def build_garment(scene, B, name, arm, sk, body):
         ed[start:start + n] = 1.0
     att = me.color_attributes.new("ClothData", 'FLOAT_COLOR', 'POINT')
     data = cloth_data(rec["material"], ao, ed, metal, np.concatenate(polishes), np.concatenate(mats))
+    if rec.get("rag") and rec["material"] != "plate":     # rags: torn on the living too (alpha = 1 - rag; hum_rags)
+        data[:, 3] = 1.0 - float(rec["rag"])
     att.data.foreach_set("color", data.astype(np.float32).ravel())
     ob = hum_hair.replace_object(scene, cloth_name(name), me)
     col = bpy.data.collections.get(CLOTH_COL) or bpy.data.collections.new(CLOTH_COL)

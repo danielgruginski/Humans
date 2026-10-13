@@ -11,6 +11,8 @@
 // the rest position like the mail: holes where R + fray < _Tatter * holes (hems tear first), a dark frayed rim, dirt;
 // _TatterCut 1 cuts the holes out (a skeleton's rags: the bones show; the depth and shadow passes clip them too),
 // 0 paints the skin (_Skin) in them, shadowed under the cloth's edge (a zombie). Same maths as hum_material._tatter.
+// Rags (hum_rags, 2026-10-12): vertex colour a = 1 - rag; they tear at least that much on anyone, over a field whose tile
+// is (1 + _TatterRagTile * rag) times larger (fewer, bigger rips); the character's own torn amount adds on top.
 Shader "Humans/Cloth"
 {
     Properties
@@ -33,6 +35,7 @@ Shader "Humans/Cloth"
         _TatterFray ("Fray", Float) = 0.22
         _TatterHem ("Hems tear first", Float) = 0.6
         _TatterRim ("Frayed rim", Float) = 0.035
+        _TatterRagTile ("Rags: tile x (1 + this * rag)", Float) = 5
     }
     SubShader
     {
@@ -50,7 +53,7 @@ Shader "Humans/Cloth"
             half _HemDark, _Smoothness;
             float _Hide, _Triplanar, _TriTile;
             half _Tatter, _TatterCut;
-            float _TatterTile, _TatterHoles, _TatterFray, _TatterHem, _TatterRim;
+            float _TatterTile, _TatterHoles, _TatterFray, _TatterHem, _TatterRim, _TatterRagTile;
         CBUFFER_END
 
         // blend weights of a 3D projection from the rest position's own surface (not the posed one)
@@ -62,15 +65,18 @@ Shader "Humans/Cloth"
             return tw / max(tw.x + tw.y + tw.z, 1e-5);
         }
 
-        // d > 0 inside a hole (in hole-field units); dirt 0..1
-        void Tatter(HVaryings i, float3 tw, out half d, out half dirt)
+        // a rag's own torn amount (vertex colour a = 1 - rag), and the torn amount it shows: the character's or the rag's
+        half RagOf(HVaryings i) { return saturate(1 - i.color.a); }
+
+        // d > 0 inside a hole (in hole-field units); dirt 0..1; T the torn amount, rag the rag's own (a coarser field)
+        void Tatter(HVaryings i, float3 tw, half T, half rag, out half d, out half dirt)
         {
-            float3 q = i.cap.xyz / _TatterTile;
+            float3 q = i.cap.xyz / (_TatterTile * (1 + _TatterRagTile * rag));
             half3 t = SAMPLE_TEXTURE2D(_TatterTex, sampler_TatterTex, q.yz).rgb * tw.x
                     + SAMPLE_TEXTURE2D(_TatterTex, sampler_TatterTex, q.xz).rgb * tw.y
                     + SAMPLE_TEXTURE2D(_TatterTex, sampler_TatterTex, q.xy).rgb * tw.z;
-            half h = t.r + (t.b - 0.5) * _TatterFray - i.color.g * _TatterHem * _Tatter;
-            d = _Tatter > 0 ? _Tatter * _TatterHoles * (1 + _TatterCut) - h : -1;
+            half h = t.r + (t.b - 0.5) * _TatterFray - i.color.g * _TatterHem * T;
+            d = T > 0 ? T * _TatterHoles * (1 + _TatterCut) - h : -1;
             dirt = smoothstep(0.3, 0.9, t.g);
         }
 
@@ -78,10 +84,12 @@ Shader "Humans/Cloth"
         void ClothClip(HVaryings i)
         {
             clip(0.5 - fmod(floor(_Hide / exp2(round(i.uv.z))), 2.0));
-            if (_TatterCut > 0.5 && _Tatter > 0)
+            half rag = RagOf(i);
+            half T = max(_Tatter, rag);
+            if (_TatterCut > 0.5 && T > 0)
             {
                 half d, dirt;
-                Tatter(i, RestWeights(i.cap.xyz), d, dirt);
+                Tatter(i, RestWeights(i.cap.xyz), T, rag, d, dirt);
                 clip(-d);
             }
         }
@@ -124,14 +132,16 @@ Shader "Humans/Cloth"
                 col *= 1.0 - _HemDark * i.color.g;
                 col = lerp(col, _Metal.rgb * lerp(0.5, 1.0, i.color.r), i.color.b);
                 half smooth = lerp(_Smoothness, _MetalSmoothness, i.color.b);
-                // torn and dirty (the undead)
+                // torn and dirty (the undead; rags on anyone)
+                half rag = RagOf(i);
+                half T = max(_Tatter, rag);
                 half d = -1, dirt = 0;
-                UNITY_BRANCH if (_Tatter > 0) Tatter(i, tw, d, dirt);   // a uniform: the living skip the taps
-                half on = step(0.001, _Tatter);
+                UNITY_BRANCH if (T > 0) Tatter(i, tw, T, rag, d, dirt);   // the living in whole clothes skip the taps
+                half on = step(0.001, T);
                 half hole = step(0, d) * on;
                 clip(0.5 - hole * _TatterCut);
                 half rim = step(-_TatterRim, d) * (1 - hole) * on;
-                col = lerp(col, col * half3(0.5, 0.45, 0.36), dirt * _Tatter * 0.9);
+                col = lerp(col, col * half3(0.5, 0.45, 0.36), dirt * T * 0.9);
                 col *= 1 - 0.55 * rim;
                 half3 skin = _Skin.rgb * lerp(0.2, 0.6, smoothstep(0, 0.1, d));
                 col = lerp(col, skin, hole);

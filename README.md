@@ -642,3 +642,30 @@ and human_clips.json carries them. Unity: Humans_Motion states 21-25 (the old nu
 Reaching arms are IK targets from each shoulder in the character's frame (`reach`): FK "down/swing" angles and targets in
 the leaning chest's frame pointed them sideways or at the knees. `HITS` has the impact times for a game's hit events.
 Checks: renders/_tmp/zanim_*.png (Blender strips), MedievalSetting/Logs/Undead/zanim_*.png (Unity, frozen frames).
+
+## Rags (`src/hum_rags.py`, 2026-10-12)
+
+Clothes worn to tatters, for anyone and for the undead (Daniel: "another clothing option for humans - rags. This will
+also be used to improve the zombie clothing"). Torn in the geometry, not only painted:
+
+| Garment | Slot | What | Tris LOD0 / 1 / 2 (MStrong) |
+|---|---|---|---|
+| RagShirt | top, layer 1 | loose (1 cm off, 2.6 cm at the hips: over the trousers), the sleeves torn off at their own lengths (left at the elbow, right high), the neckline torn wider; below the hips a short skirt tail (it hangs, not into the crotch) torn into uneven pointed teeth | ~3.7k / 1.5k / 0.67k |
+| RagTunic | outer, layer 2 | the torso without sleeves, torn neckline; a skirt from the hips to above the knee cut into 13 strips of their own length with slanted ends and slits between them, on the skirt ring (they sway) | ~2.6k / 1.0k / 0.46k |
+| RagTrousers | legs, layer 1 | torn off at mid-calf, the left leg shorter, jagged hems | ~1.8k / 0.74k / 0.33k |
+
+- **Cut, not modelled:** each rag is built whole to its longest tooth (`hum_cloth.shell` or `loft_skirt`), then
+  `rag_cut` drops every face whose nearest body vertex lies past the torn edge (by part, height, angle round the
+  body or limb, limb param) and eases the new border along itself. Hems on lofted skirts are torn by drawing each
+  vertex column up along itself (`_tear_hem`), so the edge runs in teeth, not face steps. The teeth are seeded
+  (`teeth`: random widths, depth, lean, a notch now and then): the same cut on every build. DECIMATE 0.65 (a plain
+  shell keeps 0.4): big faces swallowed the teeth.
+- **Torn on the living too:** the recipe's `rag` (0.32) goes into ClothData alpha (1 - rag). Humans/Cloth and
+  `hum_material._tatter` tear at least that much, over a hole field whose tile is (1 + `_TatterRagTile` x rag) times
+  larger (5: fewer, bigger rips than the undead's speckles); a zombie's or skeleton's own `_Tatter` adds on top, and
+  the holes show the skin (zombies, the living) or are cut (skeletons) as before. Other garments' alpha is 1 (no
+  change).
+- Export: cloth family "Rags" -> `Human_Cloth_Rags.fbx` (90 objects). Install as any cloth family (copy the FBX, the
+  config and HumanCloth.shader; Configure Model, Build Materials, Rebuild Prefab).
+- Wearing them: `RagShirt` + `RagTrousers` (barefoot), `RagTunic` over `RagShirt`, `Skeleton` + `RagTrousers` + a
+  belt. MedievalSetting dresses its zombies and barrow skeletons in them and offers two rag start outfits.

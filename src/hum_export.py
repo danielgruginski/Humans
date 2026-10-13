@@ -55,8 +55,11 @@ def cloth_family(garment):
     import hum_robe
     import hum_orcgear
     import hum_skeleton
+    import hum_rags
     if garment in hum_orcgear.ORC:                     # the orcs' gear: its own file (fur, hide, crude iron)
         return "Orc"
+    if garment in hum_rags.RAGS:                       # rags (2026-10-12): torn in the geometry, beggars and the dead
+        return "Rags"
     if garment in hum_skeleton.SKELETON:               # the undead's bones
         return "Undead"
     if garment in hum_cloak.CLOAK:
