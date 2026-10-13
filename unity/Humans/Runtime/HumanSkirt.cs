@@ -11,8 +11,11 @@ namespace Humans
     /// thighs - over the lap, the back tucked under them - and the points stiffen onto it. So a knee or a heel
     /// pushes only the cloth it reaches, and the rest hangs, swings and trails. (Rigid panels turning with the
     /// thighs lifted whole quarters of a skirt when running.)
-    /// Runs after the Animator and HumanHelperBones, at a fixed 60 Hz. HumanSetup fills it from human_rig.json;
-    /// HumanFace enables it only while a garment with a skirt is worn.
+    /// Runs after the Animator and HumanHelperBones, at a fixed 60 Hz (at most two steps a frame: a slow frame does not
+    /// pile up more work for the next). HumanSetup fills it from human_rig.json; HumanFace enables it only while a
+    /// garment with a skirt is worn. It rests while none of the character's skinned meshes is drawn (off screen and out
+    /// of the shadows: a crowd of a game's people), and the leg capsules are read once a frame, not per column and
+    /// point (2026-10-12: 17 people with belts and tunics cost a game 30 ms a frame).
     /// </summary>
     [DefaultExecutionOrder(150)]
     public class HumanSkirt : MonoBehaviour
@@ -103,10 +106,37 @@ namespace Humans
             return u * u * (3f - 2f * u);
         }
 
+        Vector3[] capA = Array.Empty<Vector3>(), capB = Array.Empty<Vector3>();
+        SkinnedMeshRenderer[] drawn = Array.Empty<SkinnedMeshRenderer>();
+        float drawnAt = -10f;
+
+        /// <summary>any of the character's skinned meshes drawn this frame (by a camera or a shadow); the list is looked
+        /// up again every 2 s (garments come and go)</summary>
+        bool Drawn()
+        {
+            if (Time.unscaledTime - drawnAt > 2f || drawn.Length == 0)
+            {
+                drawn = GetComponentsInChildren<SkinnedMeshRenderer>(false);
+                drawnAt = Time.unscaledTime;
+            }
+            if (drawn.Length == 0) return true;                         // nothing to judge by: as before
+            foreach (var r in drawn) if (r != null && r.enabled && r.isVisible) return true;
+            return false;
+        }
+
         void LateUpdate()
         {
             int n = columns.Length;
             if (n == 0 || facing == null) return;
+            if (!Drawn()) { live = false; return; }                     // unseen: rest (it starts afresh when seen)
+            if (capA.Length != colliders.Length) { capA = new Vector3[colliders.Length]; capB = new Vector3[colliders.Length]; }
+            for (int i = 0; i < colliders.Length; i++)                   // the legs where the animation put them
+            {
+                var cap = colliders[i];
+                if (cap.a == null || cap.b == null) continue;
+                capA[i] = cap.a.position;
+                capB[i] = cap.bLocal == Vector3.zero ? cap.b.position : cap.b.TransformPoint(cap.bLocal);
+            }
             if (p1 == null || p1.Length != n)
             {
                 p1 = new Vector3[n]; p1Prev = new Vector3[n]; p2 = new Vector3[n]; p2Prev = new Vector3[n];
@@ -172,7 +202,7 @@ namespace Humans
                 acc = 0f;
                 live = true;
             }
-            acc = Mathf.Min(acc + Time.deltaTime, 4 * Step);
+            acc = Mathf.Min(acc + Time.deltaTime, 2 * Step);
             float stiff = Mathf.Lerp(stiffness, 1f, k);
             seated = k;
             while (acc >= Step)
@@ -312,10 +342,11 @@ namespace Humans
             {
                 float t = Mathf.Lerp(from, 1f, s / 2f);
                 var q = a + (tip - a) * t;
-                foreach (var cap in colliders)
+                for (int ci = 0; ci < colliders.Length; ci++)
                 {
+                    var cap = colliders[ci];
                     if (cap.a == null || cap.b == null) continue;
-                    Vector3 ca = cap.a.position, cb = cap.bLocal == Vector3.zero ? cap.b.position : cap.b.TransformPoint(cap.bLocal);
+                    Vector3 ca = capA[ci], cb = capB[ci];                       // read once a frame (LateUpdate)
                     var ab = cb - ca;
                     float u = Mathf.Clamp01(Vector3.Dot(q - ca, ab) / Mathf.Max(ab.sqrMagnitude, 1e-8f));
                     var A = ca + ab * u;

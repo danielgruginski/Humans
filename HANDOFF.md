@@ -328,6 +328,12 @@ Done: head + eyes, stylisation, UVs, paint masks, preview shader, 98 keys, rando
   with `hangs` is worn. The leg margin (`thickness`, boots) is capped per column by its rest gap (a margin
   wider than the gap flew the tight sides of a dress up standing still). Blender previews only hang /
   follow the thighs seated (no simulation): check running skirts in Unity.
+  Cost (2026-10-12, MedievalSetting's bandit road at 12-40 fps, the profiler: HumanSkirt.LateUpdate 30.7 ms of a 40 ms
+  frame for 17 people; the belt, tunic, jerkin, gambeson and hauberk all hang, so nearly everyone runs it): the leg
+  capsules are now read once a frame (they were read per column, point and pass: thousands of transform reads a
+  step), at most two steps a frame (it had caught up to four, so a slow frame made the next slower), and it rests
+  while none of the character's skinned meshes is drawn (off screen and out of the shadows; it starts afresh when
+  seen). Installed into MedievalSetting by copying the script.
 - Then "everything that has a skirt like item ... broking into pieces": the ring only took skirt rows with some
   pelvis weight, but `skirt_shell` garments (Tunic, Coat, Jerkin and what's built on them: Hauberk, Cuirass,
   StuddedCoat, Gambeson) weight their skirts' sides like trousers - half of each skirt hung from the ring, half
