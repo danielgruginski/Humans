@@ -519,3 +519,43 @@ Done: head + eyes, stylisation, UVs, paint masks, preview shader, 98 keys, rando
   corners that can read as fangs; ponytail tips are flat when seen from below; long hair will need the
   body/shoulders to collide with.
 - Beards on the jaw need jaw-bone weights once the face rig exists (talking).
+
+- 2026-10-18: **orc mammoth driver** (Daniel: "orc mammoth riders, complete with animations"; his picks: one driver on
+  the neck, all clips ours -- he reopened own-made clips for this): `src/hum_ride.py`, scene **Orc_Mammoth** (the
+  mammoth, its MammothTack and clips appended from Beasts' beasts.blend; `OrcRider` = a copy of HumanRig on the
+  mammoth's `Socket_Driver` at the orc preset's mean height x1.155, bones at the MOrc joints, wearing copies of the
+  body, an orc head and the Orc Hide garments, the weapon kit's IronSpear in the right fist). Poses are hum_anim
+  Poses on `OrcRig` (the base rig + MOrc joint deltas from export/human_rig.json); the pelvis is keyed against the
+  base rest (the Animator's hips). 15 clips `Human@MammothDriver_*`: one per mammoth clip (Idle, Walk, Run, Charge,
+  Trumpet, TuskSwipe, Stomp, Graze, Hit, Death, Sleep, Wake) keyed every frame in seat space (torso lag, feet under
+  the foot rope, left fist on the rope grip, accents; Death rides the mammoth down and slides off its left side),
+  plus Thrust, Flinch (overlays) and Fall. `hum_ride.build_all()`, export from the Faces scene:
+  `hum_ride.export_clips()` (registers its clips in `hum_anim.CLIPS` only, not BUILD/human_clips.json). Unity:
+  `Beasts.MountedRider`; the game's `RiderSetup` configures the clips and builds the driver in `Riders_Test`.
+  Gotcha: Blender 4.4 action slots -- `hum_anim.use` assigns the action's slot (an action keyed on OrcRider otherwise
+  exported a T-pose from HumanRig).
+  Fixes the same day (Daniel: "the arm is messed up", "he swirls the spear, then thrusts"): every hand goes through
+  `hum_anim._handle_hands(cap=True)` (`hum_ride.hold`): a hand turned freely put the rope-grip arm past Humanoid's
+  wrist limits (twist 90 / flex 80 / deviation 40) and Unity twisted it. The rope grip's direction is searched once
+  per clip (thumb-up on the loop won); the elbow carries frame to frame (`HINT`), with a full search when a hinted
+  solve goes over. A fist's grip runs across the forearm (give or take 40 degrees): a spear along the extended arm or
+  upright above a vertical forearm can't be held -- the jab now crosses the arm at ~50 degrees, the raised spear
+  points forward-up, and `_tilt` leans the weapon up to 45 degrees where nothing else fits. Own clips blend body
+  settings and hand targets per frame and solve each frame (key poses alone, or solved arms slerped bone by bone,
+  swirled the spear / bent the wrist). All clips within the limits (one Trumpet frame 7 degrees over on flex).
+  Then (Daniel: "now the orc trumpet is swirling the spear"): what held it steady, every clip measured for per-frame
+  turns of the spear and both forearms (all <= 21 deg, mostly real motion, wrists inside the limits):
+  - hands follow on frame to frame (`CHAIN`: the elbow kept as a direction -- an angle from a fixed zero flipped
+    when the arm lay along that zero -- and the forearm twist searched near the last; each step away costs), a
+    fresh solve only when following on breaks a wrist by more than 6 degrees; loops run a lap first so the seam
+    matches;
+  - the rope-grip fist is where the grip is at rest, carried by the torso (`GRIP_LOCAL`): tracking the rope through
+    the mammoth's head swings asked for poses no wrist gives;
+  - weapon poses searched for comfort rather than drawn: the jab cocks low with the arm down-out-back and pushes 24 cm
+    along the shaft, the charge's spear is levelled low from the hip (under the arm along the forearm it sat at the
+    limits and cycled every frame), the trumpet swings the resting arm up about the shoulder (a spear upright or
+    forward overhead needs more forearm twist than Humanoid has); the resting spear is carried by the torso;
+  - the falls blend the clinging pose out over 0.2 s; their flailing arms keep their own `CHAIN` keys.
+  A comfort search like the ones in this session (arm reach x spear direction, `_handle_hands` full solve, cost
+  wrist_comfort + miss) is the way to set any new held-weapon pose.
+

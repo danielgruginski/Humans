@@ -1143,7 +1143,11 @@ def use(name, frame=0):
     ob = bpy.data.objects[RIG]
     if ob.animation_data is None:
         ob.animation_data_create()
-    ob.animation_data.action = bpy.data.actions["Hum_" + name]
+    act = bpy.data.actions["Hum_" + name]
+    ob.animation_data.action = act
+    ad = ob.animation_data                  # Blender 4.4 slots: an action keyed on another object (hum_ride's OrcRider)
+    if hasattr(ad, "action_slot") and ad.action_slot is None and len(getattr(act, "slots", ())):
+        ad.action_slot = act.slots[0]       # binds only through its slot, else an export bakes the rest pose
     bpy.context.scene.frame_set(frame)
 
 
