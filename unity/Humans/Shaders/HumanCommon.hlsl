@@ -105,4 +105,56 @@ half4 HumanShadePBR(HVaryings i, half3 albedo, half metallic, half smoothness, h
     return c;
 }
 
+
+// Skin (2026-10-18, after "they look like plastic figurines"): a matte, weakly reflective surface with a little light
+// scattered past the shadow edge. Needs _SPECULAR_SETUP defined before this file (Humans/Skin, Humans/Body):
+//   - specular = the reflectance at normal incidence (skin ~0.028; lower = less glare), taken as is, so the grazing
+//     rim and the environment reflection scale with it, not with a fixed 0.04;
+//   - smoothness broken up a little across the surface (value noise in UV space, so it stays on the body as it moves):
+//     a perfectly even sheen is what reads as a moulded figure;
+//   - scatter: the main light wrapped past the terminator in a warm tint (a cheap stand-in for subsurface light).
+static const half SKIN_WRAP = 0.5;
+static const half3 SKIN_SCATTER_TINT = half3(1.0, 0.42, 0.30);
+
+half HumanNoise(float2 p)
+{
+    float2 c = floor(p), f = frac(p);
+    f = f * f * (3.0 - 2.0 * f);
+    #define HN_HASH(q) frac(sin(dot(q, float2(127.1, 311.7))) * 43758.5453)
+    half n = lerp(lerp(HN_HASH(c), HN_HASH(c + float2(1, 0)), f.x), lerp(HN_HASH(c + float2(0, 1)), HN_HASH(c + float2(1, 1)), f.x), f.y);
+    #undef HN_HASH
+    return n;
+}
+
+half4 HumanShadeSkin(HVaryings i, half3 albedo, half smoothness, half specular, half scatter, half breakup)
+{
+    InputData d = (InputData)0;
+    d.positionWS = i.positionWS;
+    d.positionCS = i.positionCS;
+    d.normalWS = NormalizeNormalPerPixel(i.normalWS);
+    d.viewDirectionWS = GetWorldSpaceNormalizeViewDir(i.positionWS);
+    d.shadowCoord = TransformWorldToShadowCoord(i.positionWS);
+    d.fogCoord = InitializeInputDataFog(float4(i.positionWS, 1.0), i.fogFactor);
+    d.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(i.positionCS);
+    d.bakedGI = SampleSH(d.normalWS);
+    d.shadowMask = half4(1, 1, 1, 1);
+
+    half n = HumanNoise(i.uv.xy * 160.0) * 0.6 + HumanNoise(i.uv.xy * 47.0) * 0.4;
+    SurfaceData s = (SurfaceData)0;
+    s.albedo = albedo;
+    s.specular = specular.xxx;
+    s.smoothness = saturate(smoothness + (n - 0.5) * breakup);
+    s.occlusion = 1;
+    s.alpha = 1;
+    half4 c = UniversalFragmentPBR(d, s);
+
+    Light L = GetMainLight(d.shadowCoord, d.positionWS, d.shadowMask);
+    half ndl = dot(d.normalWS, L.direction);
+    half wrap = saturate((ndl + SKIN_WRAP) / (1.0 + SKIN_WRAP)) - saturate(ndl);
+    half lit = L.distanceAttenuation * lerp(1.0, L.shadowAttenuation, 0.5);   // the band lies where the body shades itself
+    c.rgb += albedo * SKIN_SCATTER_TINT * L.color * (wrap * lit * scatter);
+    c.rgb = MixFog(c.rgb, d.fogCoord);
+    return c;
+}
+
 #endif

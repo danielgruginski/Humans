@@ -22,7 +22,10 @@ Shader "Humans/Skin"
         _BeardShadow ("Beard shadow", Range(0, 1)) = 0
         _Rot ("Rot (undead)", Range(0, 1)) = 0
         _Wounds ("Wound sets (x, y)", Vector) = (0, 0, 0, 0)
-        _Smoothness ("Smoothness", Range(0, 1)) = 0.45
+        _Smoothness ("Smoothness (matte skin: 0.32)", Range(0, 1)) = 0.32
+        _Specular ("Reflectance F0 (skin 0.028; lower = less glare)", Range(0, 0.08)) = 0.025
+        _Scatter ("Light scattered past the shadow edge", Range(0, 1)) = 0.18
+        _Breakup ("Smoothness break-up", Range(0, 0.4)) = 0.12
     }
     SubShader
     {
@@ -47,6 +50,7 @@ Shader "Humans/Skin"
             #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Fog.hlsl"
             #pragma multi_compile_instancing
 
+            #define _SPECULAR_SETUP                    // HumanShadeSkin: the reflectance set directly
             #include "HumanCommon.hlsl"
 
             TEXTURE2D(_MaskA); SAMPLER(sampler_MaskA);
@@ -55,7 +59,7 @@ Shader "Humans/Skin"
             TEXTURE2D(_RotMask); SAMPLER(sampler_RotMask);
             CBUFFER_START(UnityPerMaterial)
                 half4 _Tone, _Lip, _Hair, _Lash;
-                half _Blush, _Freckles, _Stubble, _Age, _Brows, _Scalp, _BeardShadow, _Smoothness, _Rot;
+                half _Blush, _Freckles, _Stubble, _Age, _Brows, _Scalp, _BeardShadow, _Smoothness, _Rot, _Specular, _Scatter, _Breakup;
                 half4 _Wounds;
             CBUFFER_END
 
@@ -83,7 +87,7 @@ Shader "Humans/Skin"
                 col *= a.b * SHADE_MAX;
                 col = lerp(col, lerp(col, hair * 0.9, 0.75), c.r * _Scalp);
                 col = lerp(col, lerp(col, hair * 0.8, 0.5), c.g * _BeardShadow);
-                return HumanShade(i, col, lerp(_Smoothness, 0.6, wet));
+                return HumanShadeSkin(i, col, lerp(_Smoothness, 0.6, wet), lerp(_Specular, 0.04, wet), _Scatter * (1 - wet), _Breakup);
             }
             ENDHLSL
         }

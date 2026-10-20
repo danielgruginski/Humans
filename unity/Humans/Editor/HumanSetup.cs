@@ -24,6 +24,9 @@ namespace Humans.EditorTools
         const string Models = Root + "/Models", Textures = Root + "/Textures", Data = Root + "/Data",
             Materials = Root + "/Materials", Prefabs = Root + "/Prefabs", Scenes = Root + "/Scenes", Anim = Root + "/Animation";
         const string BodyFbx = Models + "/Human_Body.fbx", HairFbx = Models + "/Human_Hair.fbx";
+        // the skin's look (Humans/Skin, Humans/Body: HumanShadeSkin) and the hair's gloss
+        public const float SkinSmoothness = 0.32f, SkinSpecular = 0.025f, SkinScatter = 0.18f, SkinBreakup = 0.12f;
+        public const float HairSmoothness = 0.3f;
 
         /// <summary>Garments ship as one FBX per outfit family (Human_Cloth_Clothes, _Leather, _Plate, ...).</summary>
         static string[] ClothFbxs() => AssetDatabase.FindAssets("Human_Cloth_ t:Model", new[] { Models })
@@ -209,6 +212,16 @@ namespace Humans.EditorTools
             mats.eye.SetTexture("_EyeMask", Tex("T_Eye_Mask"));
             mats.eye.SetFloat("_Smoothness", 0.72f);
             mats.hair.SetTexture("_Strands", Tex("T_Hair_Strands"));
+            // matte skin (2026-10-18, "they look like plastic figurines"): rough, weakly reflective, a little light
+            // scattered past the shadow edge (HumanShadeSkin); the hair less glossy too
+            foreach (var m in new[] { mats.skin, mats.body })
+            {
+                m.SetFloat("_Smoothness", SkinSmoothness);
+                m.SetFloat("_Specular", SkinSpecular);
+                m.SetFloat("_Scatter", SkinScatter);
+                m.SetFloat("_Breakup", SkinBreakup);
+            }
+            mats.hair.SetFloat("_Smoothness", HairSmoothness);
             mats.body.SetTexture("_MaskA", Tex("T_Body_MaskA"));
             mats.body.SetTexture("_MaskB", Tex("T_Body_MaskB"));
             mats.body.SetTexture("_RotMask", Tex("T_Body_Rot"));

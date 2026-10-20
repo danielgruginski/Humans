@@ -17,7 +17,7 @@ Shader "Humans/Hair"
         _Streaks ("Streak fraction", Range(0, 1)) = 0
         _Ombre ("Ombre", Range(0, 1)) = 0
         _EdgeDark ("Clump edge darkening", Range(0, 1)) = 0.35
-        _Smoothness ("Smoothness", Range(0, 1)) = 0.45
+        _Smoothness ("Smoothness", Range(0, 1)) = 0.3
         _CapCut ("Cap cut (0 = no cap)", Float) = 0
         _HoodCut ("Under a hood (0/1)", Float) = 0
     }

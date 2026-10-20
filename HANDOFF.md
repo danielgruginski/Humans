@@ -559,3 +559,14 @@ Done: head + eyes, stylisation, UVs, paint masks, preview shader, 98 keys, rando
   A comfort search like the ones in this session (arm reach x spear direction, `_handle_hands` full solve, cost
   wrist_comfort + miss) is the way to set any new held-weapon pose.
 
+- 2026-10-20: **matte skin** (Daniel, from a Reddit comment: "increase the roughness and remove the glare, that will make
+  them look less like plastic figurines"). `HumanCommon.HumanShadeSkin` (Humans/Skin and Humans/Body define
+  `_SPECULAR_SETUP`): the reflectance F0 set directly (`_Specular` 0.025; it scales the grazing rim and the
+  environment reflection too), smoothness 0.32 (was 0.45 head / 0.40 body) broken up a little by UV value noise
+  (`_Breakup` 0.12: an even sheen reads as moulded), and the main light wrapped past the shadow edge in a warm tint
+  (`_Scatter` 0.18, a cheap stand-in for subsurface light). Hair smoothness 0.30 (was 0.45). Wounds stay wet (0.6,
+  F0 0.04); the painted underclothes on the body stay cloth. The values live in `HumanSetup` (SkinSmoothness ...), set
+  on M_HumanSkin / M_HumanBody / M_HumanHair at every rebuild. Chosen from a front-lit sweep (0.25 / 0.02 / 0.35
+  read as clay). Renders: `renders/skin_matte_before_after.png`; Unity `Logs/SkinLook`. Goblins were already matte
+  (URP Lit 0.08).
+

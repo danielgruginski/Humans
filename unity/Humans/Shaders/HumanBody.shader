@@ -16,7 +16,10 @@ Shader "Humans/Body"
         _Blush ("Blush", Range(0, 1)) = 0.5
         _Freckles ("Freckles", Range(0, 1)) = 0
         _Top ("Chest band", Range(0, 1)) = 0
-        _Smoothness ("Smoothness", Range(0, 1)) = 0.4
+        _Smoothness ("Smoothness (matte skin: 0.32)", Range(0, 1)) = 0.32
+        _Specular ("Reflectance F0 (skin 0.028; lower = less glare)", Range(0, 0.08)) = 0.025
+        _Scatter ("Light scattered past the shadow edge", Range(0, 1)) = 0.18
+        _Breakup ("Smoothness break-up", Range(0, 0.4)) = 0.12
         _Hide ("Hidden regions (bit mask)", Float) = 0
         _Suit ("Bodysuit (0/1)", Float) = 0
         _SuitColor ("Bodysuit colour", Color) = (0.12, 0.12, 0.13, 1)
@@ -45,6 +48,7 @@ Shader "Humans/Body"
             #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Fog.hlsl"
             #pragma multi_compile_instancing
 
+            #define _SPECULAR_SETUP                    // HumanShadeSkin: the reflectance set directly
             #include "HumanCommon.hlsl"
 
             TEXTURE2D(_MaskA); SAMPLER(sampler_MaskA);
@@ -53,7 +57,7 @@ Shader "Humans/Body"
             TEXTURE2D(_SuitPattern); SAMPLER(sampler_SuitPattern);
             CBUFFER_START(UnityPerMaterial)
                 half4 _Tone, _Cloth, _SuitColor;
-                half _Blush, _Freckles, _Top, _Smoothness, _Suit, _Rot;
+                half _Blush, _Freckles, _Top, _Smoothness, _Suit, _Rot, _Specular, _Scatter, _Breakup;
                 half4 _Wounds;
                 float _Hide, _SuitTile;
             CBUFFER_END
@@ -81,7 +85,8 @@ Shader "Humans/Body"
                 col = lerp(col, _SuitColor.rgb * lerp(0.7, 1.0, weave), _Suit);
                 cloth = max(cloth, _Suit);
                 col *= a.b * SHADE_MAX;
-                return HumanShade(i, col, lerp(lerp(_Smoothness, 0.6, wet), 0.2, cloth));
+                return HumanShadeSkin(i, col, lerp(lerp(_Smoothness, 0.6, wet), 0.2, cloth), lerp(lerp(_Specular, 0.04, wet), 0.04, cloth),
+                                      _Scatter * (1 - max(wet, cloth)), _Breakup * (1 - cloth));
             }
             ENDHLSL
         }
