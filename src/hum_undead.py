@@ -215,8 +215,135 @@ def _deform_gaunt(C, rig, sk, cheek=0.0075, temple=0.004):
     return C
 
 
+# ------------------------------------------------------------------ the ghoul's body (2026-10-23: a zombie type with
+# big claws and an arched posture; the Ghoul builds, hum_ghoul for its claws). The arch itself is a runtime bend
+# (Unity HumanPosture: the spine turned forward after the Animator); these shapes give the body it bends.
+
+def _stretch(C, sk, ext):
+    """Bones lengthened along themselves, `ext` {bone: metres}: a vertex on a stretched bone moves by how far along
+    the bone it lies (0 at its head .. ext at its tail), by its skin weights; every bone below moves with the point
+    of its parent it hangs from. Joint cubes included, so the skeleton follows."""
+    W = F._weights(sk, len(C))
+    H, T = sk.ends(C)
+    U = T - H
+    L = np.maximum(np.linalg.norm(U, axis=1), 1e-9)
+    U = U / L[:, None]
+    t_of = lambda P, i: np.clip(((P - H[i]) @ U[i]) / L[i], 0.0, 1.0)
+    D = np.zeros((len(sk.bones), 3))
+    for i, b in enumerate(sk.bones):                     # parents first
+        p = sk.rig[b].get("parent")
+        if p in sk.index:
+            ip = sk.index[p]
+            D[i] = D[ip] + U[ip] * ext.get(p, 0.0) * float(t_of(H[i][None], ip)[0])
+    disp = W @ D
+    for b, e in ext.items():
+        i = sk.index[b]
+        disp += (W[:, i] * t_of(C, i) * e)[:, None] * U[i]
+    return C + disp
+
+
+FINGERS = ("index", "middle", "ring", "pinky")
+
+
+def _deform_claws(C, rig, sk, grow=(0.3, 0.45, 0.55), thumb=(0.0, 0.25, 0.35), thin=0.25):
+    """Long, thin fingers (the claws themselves are a garment, hum_ghoul): each phalanx lengthened by `grow` of its
+    length (the thumb's by `thumb`), the finger's skin drawn in toward its bones by `thin`."""
+    H, T = sk.ends(C)
+    ext = {}
+    for side in ("l", "r"):
+        for f in FINGERS + ("thumb",):
+            g = thumb if f == "thumb" else grow
+            for k in range(3):
+                b = f"{f}_0{k + 1}_{side}"
+                if g[k] and b in sk.index:
+                    i = sk.index[b]
+                    ext[b] = g[k] * float(np.linalg.norm(T[i] - H[i]))
+    W = F._weights(sk, len(C))
+    skin = F._skin(len(C))
+    # thin first, about the unstretched bones (the radial pull then rides along with the stretch)
+    S = C.copy()
+    for b in sk.bones:
+        if not b.startswith(FINGERS + ("thumb_02", "thumb_03")):
+            continue
+        i = sk.index[b]
+        u = T[i] - H[i]
+        Lb = float(np.linalg.norm(u))
+        u = u / Lb
+        d = C - H[i]
+        t = np.clip(d @ u, 0.0, Lb)
+        rad = d - t[:, None] * u
+        near = _smooth(0.022, 0.014, np.linalg.norm(rad, axis=1))
+        S -= rad * (thin * W[:, i] * skin * near)[:, None]
+    return _stretch(S, sk, ext)
+
+
+def _deform_long_arms(C, rig, sk, upper=0.025, fore=0.04):
+    """Longer arms: the upper arm by `upper`, the forearm by `fore` (metres), stretched evenly along each."""
+    ext = {}
+    for side in ("l", "r"):
+        ext["upperarm_" + side] = upper
+        ext["lowerarm_" + side] = fore
+    return _stretch(C, sk, ext)
+
+
+def _deform_arch(C, rig, sk, shrug=0.022, fwd=0.012, head_fwd=0.03, head_drop=0.012, hump=0.028, blade=0.011):
+    """More than the Hunch, for a back the runtime bend arches: the shoulders hunched up and forward (bone offsets,
+    like Hunch), the head carried further forward, a broad hump from mid-back to the neck and the shoulder blades
+    standing out (skin only)."""
+    W = F._weights(sk, len(C))
+    skin = F._skin(len(C))
+    H, j, cy = _torso_frame(C, sk)
+    D = np.zeros((len(sk.bones), 3))
+    for side in ("l", "r"):
+        D[sk.index["clavicle_" + side]] = (0.0, -fwd * 0.5, shrug * 0.6)
+        for b in F._limb(sk, "upperarm_" + side):
+            D[sk.index[b]] = (0.0, -fwd, shrug)
+    D[sk.index["neck_01"]] = (0.0, -head_fwd * 0.6, -head_drop * 0.5)
+    D[sk.index["head"]] = (0.0, -head_fwd, -head_drop)
+    C = C + W @ D
+    a, rad = _around(C, cy)
+    z, ax = C[:, 2], np.abs(C[:, 0])
+    back = _smooth(0.55, 0.85, a) * skin
+    zc = j["spine_02"][2] + 0.6 * (j["neck_01"][2] - j["spine_02"][2])
+    m = np.exp(-0.5 * ((z - zc) / 0.11) ** 2) * back * _smooth(0.24, 0.15, ax)
+    C[:, 1] += hump * m
+    C[:, 2] -= 0.15 * hump * m
+    zb = j["spine_03"][2] + 0.01                              # the blades: below the shoulders' top, either side
+    for s in (-1.0, 1.0):
+        q = np.exp(-0.5 * (((C[:, 0] - s * 0.08) / 0.032) ** 2 + ((z - zb) / 0.05) ** 2))
+        C[:, 1] += blade * q * back
+    return C
+
+
+def _deform_lipless(C, rig, sk, ahead=0.0025, reach=0.004):
+    """Lips shrunk back onto the teeth (the ghoul's face): no lip may stand further forward than `ahead` in front of
+    MPFB's upper-teeth helper, the skin within `reach` of the lips eased along. Skin only."""
+    import bpy
+    import hum_mpfb
+    from mathutils.kdtree import KDTree
+    C = C.copy()
+    src = bpy.data.objects[hum_mpfb.SOURCE]
+    skin = F._skin(len(C))
+    lips = np.asarray(hum_mpfb.group_members(src, "lips"))
+    teeth = np.asarray(hum_mpfb.group_members(src, "helper-upper-teeth"))
+    front = float(C[teeth, 1].min()) - ahead                  # MPFB: -Y is the front
+    kd = KDTree(len(lips))
+    for k, i in enumerate(lips):
+        kd.insert(C[i], k)
+    kd.balance()
+    mc = C[lips].mean(0)
+    near = np.linalg.norm(C - mc, axis=1) < 0.08
+    w = np.zeros(len(C))
+    for i in np.where(near & skin)[0]:
+        w[i] = _smooth(reach, 0.0, kd.find(C[i])[2])
+    over = np.maximum(front - C[:, 1], 0.0)                   # how far in front of the line
+    C[:, 1] += over * w
+    return C
+
+
 DEFORMS = {"hunch": _deform_hunch, "ribs": _deform_ribs, "sunken": _deform_sunken, "bony": _deform_bony,
-           "eye_sunken": _deform_eye_sunken, "gaunt": _deform_gaunt}
+           "eye_sunken": _deform_eye_sunken, "gaunt": _deform_gaunt,
+           "claws": _deform_claws, "long_arms": _deform_long_arms, "arch": _deform_arch, "lipless": _deform_lipless}
 
 
 # ------------------------------------------------------------------ rot (painted: T_Head_Rot, T_Body_Rot)
@@ -512,7 +639,82 @@ SKELETON = dict(
     glow=["#7ee0d4", "#8fd0ff"],              # the eye sockets' light
 )
 
-PRESETS = [ZOMBIE, SKELETON]
+GHOUL = dict(
+    # a zombie type (2026-10-23): hairless, ashen, white-eyed, long clawed fingers, the back arched at runtime
+    name="Ghoul",
+    sliders={"CheekFull": (-0.9, 0.1), "FaceFat": (-0.9, 0.1), "CheekBones": (0.7, 0.15), "EyeSunken": (1.0, 0.0),
+             "Gaunt": (1.0, 0.0), "EarPointed": (0.7, 0.2), "EarSize": (0.3, 0.2), "MouthCorners": (-0.9, 0.1),
+             "MouthWidth": (0.4, 0.15), "Lipless": (1.0, 0.0), "EyeOpen": (0.3, 0.15), "BrowHeight": (-0.6, 0.15),
+             "BrowHeavy": (0.8, 0.15), "BrowRidge": (0.8, 0.15), "NoseDepth": (-0.8, 0.15), "HeadLength": (0.35, 0.2),
+             "ChinForward": (0.3, 0.2), "Underbite": (0.25, 0.2)},
+    build="Ghoul",
+    fem_scale=1.0,
+    # ashen, grey to bluish, a few the yellow of old bone
+    tones=["#8a8c8f", "#7d8188", "#9a9590", "#868079", "#75797a", "#a09a8e", "#6f7378"],
+    lip_from_tone=(0.5, 0.45, 0.5),
+    irises=["#e0d9b0", "#d8d2c0", "#e6e1cf", "#cfd4cf"],
+    milk=(0.9, 1.0),                          # white eyes
+    hair_styles=[""], hair_colors=["grey", "white", "black"],
+    beard="", beard_color="", no_beard=True,  # hairless: no beard (a villager's beard does not stay), no brows
+    brows=[""],
+    height=(0.0, 0.6),
+    sex_min=0.0,
+    blush=(0.0, 0.0),
+    rot=(0.45, 0.8),                          # drier than a zombie
+    wound_chance=(0.45, 0.35),
+    tatter=(0.5, 0.9), tatter_cut=False,
+    wear=["GhoulClaws"],                      # dark horn (colour group "Horn", hum_ghoul.HORN)
+    outfit=dict(M=["RagTrousers"], F=["RagShirt", "RagTrousers"]),   # Blender preview only: rags (the game dresses its own)
+)
+
+LICH = dict(
+    # 2026-10-23 (a card-game unit; Daniel: "build the creatures"): a skeleton king-sorcerer - the Skeleton and an iron
+    # crown (hum_lich), a cold light in the orbits, the magister's robe torn and cut so the bones show
+    name="Lich",
+    sliders={},
+    build="Undead",
+    fem_scale=1.0,
+    tones=[], irises=[], hair_styles=[""], hair_colors=[], beard="", beard_color="", brows=[],
+    height=(0.2, 0.6),
+    sex_min=0.0,
+    blush=(0.0, 0.0),
+    wear=["Skeleton", "LichCrown"],
+    tatter=(0.15, 0.35), tatter_cut=True,     # an old robe, holes cut out (more read as speckles at the game camera)
+    glow=["#8cff6a", "#b98cff", "#6affd8"],   # sickly green, violet, cold cyan
+    # the magister's violet and old gold (a darker violet read as black in Unity); Blender preview only
+    outfit=dict(M=["Trousers:#1c1820", "Robe:#47235e", "RobeTrim:#b08a34", "Boots:#18141a"],
+                F=["Trousers:#1c1820", "Robe:#47235e", "RobeTrim:#b08a34", "Boots:#18141a"]),
+)
+
+VAMPIRE = dict(
+    # DEPRECATED (2026-10-23, Daniel on seeing the first preview: "wow, let's give up on the vampire, make it
+    # deprecated"): kept for reference, not in PRESETS (never exported); its Fangs beard style and VampireCape are
+    # unregistered too (hum_styles.DEPRECATED_BEARD, hum_cloak.DEPRECATED).
+    # 2026-10-23 (a card-game unit; Daniel: "build the creatures"): a pale aristocrat - bloodless white skin, red
+    # eyes, dark red lips, sharp cheekbones and nose, a little pointed at the ears, fangs (a beard style, like the
+    # orcs' tusks: a woman's too), dark slicked hair. No rot. Dressed as a noble in black (VampireCape: hum_vampire)
+    name="Vampire",
+    sliders={"CheekBones": (0.7, 0.15), "CheekFull": (-0.6, 0.15), "FaceFat": (-0.6, 0.15), "ChinForward": (0.25, 0.15),
+             "NoseLength": (0.25, 0.2), "NoseHump": (0.3, 0.25), "BrowAngle": (0.5, 0.2), "EyeSunken": (0.35, 0.1),
+             "Gaunt": (0.35, 0.1), "EarPointed": (0.45, 0.15), "HeadLength": (0.2, 0.15), "MouthCorners": (-0.2, 0.15),
+             "EyeTilt": (0.25, 0.2)},
+    build="Slim",
+    fem_scale=0.7,
+    tones=["#e9e2e4", "#ddd6db", "#e6dfd6", "#d6d2d8", "#ece6e2"],
+    lip_from_tone=(0.3, 0.04, 0.06),          # dark red (0.62 / 0.22 / 0.26 read pink on the white skin)
+    irises=["#c41a1a", "#a8121a", "#d8302a", "#8e0f14"],
+    hair_styles=["Swept", "Swept", "SidePart", "Long", "Ponytail"],
+    hair_colors=["black", "black", "dark_brown", "white"],
+    beard="Fangs", beard_color="#ece6d6",
+    brows=["Thin", "Straight"],
+    height=(0.2, 0.7),
+    sex_min=0.0,
+    blush=(0.0, 0.0),
+    outfit=dict(M=["Shirt:#d8d0c0", "Trousers:#1c1a1e", "Boots:#141214", "Coat:#1a1616", "VampireCape:#1a1014"],
+                F=["Dress:#4a0e16", "Shoes:#141214", "VampireCape:#1a1014"]),   # Blender preview only
+)
+
+PRESETS = [ZOMBIE, SKELETON, GHOUL, LICH]                    # not VAMPIRE (deprecated)
 BONE = ["#d8cfb4", "#cfc4a2", "#bfb495", "#e0d8c0", "#b3a685", "#c8bb98"]     # colour group "Bone" (sRGB)
 
 
@@ -524,7 +726,8 @@ def export(p):
              rotMax=p.get("rot", (0, 0))[1], woundChance=list(p.get("wound_chance", (0.0, 0.0))),
              tatterMin=p.get("tatter", (0, 0))[0], tatterMax=p.get("tatter", (0, 0))[1],
              tatterCut=bool(p.get("tatter_cut", False)), milkMin=p.get("milk", (0, 0))[0],
-             milkMax=p.get("milk", (0, 0))[1], wear=list(p.get("wear", [])), glow=list(p.get("glow", [])))
+             milkMax=p.get("milk", (0, 0))[1], wear=list(p.get("wear", [])), glow=list(p.get("glow", [])),
+             noBeard=bool(p.get("no_beard", False)), ageMin=p.get("age", (0, 0))[0], ageMax=p.get("age", (0, 0))[1])
     if not p.get("beard"):
         d["beard"] = ""
     return d
@@ -571,6 +774,11 @@ def undead_face(seed, preset=ZOMBIE, outfit=True):
         f["brow_style"] = rng.choice(preset["brows"])
     if preset.get("beard"):
         f["beard"] = preset["beard"]
+        if preset.get("beard_color"):
+            f["beard_colors"] = dict(root=srgb(preset["beard_color"]))
+    if preset.get("no_beard"):
+        f["beard"] = None
+        p["beard_shadow"] = 0.0
     p["scalp"] = 0.0 if f.get("style") in (None, "Mohawk") else p.get("scalp", 1.0)
     f["height"] = rng.uniform(*preset["height"])
     tag = hum_builds.tag_of(masc, preset["build"])
@@ -592,11 +800,34 @@ def undead_face(seed, preset=ZOMBIE, outfit=True):
     f["tatter"] = rng.uniform(*preset.get("tatter", (0.0, 0.0)))
     f["tatter_cut"] = 1.0 if preset.get("tatter_cut") else 0.0
     o = F.random_outfit(rng, masc) if outfit else {}
+    if outfit and preset.get("outfit"):                     # "Garment" (a random cloth colour) or "Garment:#hex"
+        o = {}
+        for g in preset["outfit"]["M" if masc else "F"]:
+            name, _, hexc = g.partition(":")
+            o[name] = srgb(hexc or rng.choice(F.CLOTHS))
+    import hum_cloth
+    import hum_ghoul
+    import hum_elemental
+    palettes = {"Horn": hum_ghoul.HORN, "Blackened": F.BLACKENED, "Stone": hum_elemental.STONE}   # as GroupPalette
     for gname in preset.get("wear", []):
-        o[gname] = srgb(rng.choice(BONE))
+        o[gname] = srgb(rng.choice(palettes.get(hum_cloth.GARMENTS.get(gname, {}).get("group"), BONE)))
     if preset.get("glow"):
         f["glow"] = srgb(rng.choice(preset["glow"]))
     f["outfit"] = o
+    if preset.get("age"):                                   # drawn last, as ApplyPreset does (the elves: ageless)
+        age = rng.uniform(*preset["age"])
+        w2 = f["keys"]
+        w2.pop("Young", None)
+        w2.pop("Old", None)
+        if age < 0.12:
+            w2["Young"] = (0.12 - age) / 0.12 * 0.8
+        else:
+            w2["Old"] = (age - 0.12) * 0.75
+        g = w2.get("Masculine", 0.0) - w2.get("Feminine", 0.0)
+        for k, (a, b) in F.CORRECTIVES.items():
+            w2[k] = g * w2.get(b, 0.0) if (a == "Masculine" and b.startswith("Anc")) else w2.get(a, 0.0) * w2.get(b, 0.0)
+        p["age"] = max(0.0, (age - 0.4) / 0.6) * 1.1          # the painted age lines
+        f["age"] = age
     return f
 
 

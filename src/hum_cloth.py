@@ -816,6 +816,14 @@ import hum_skeleton                                       # noqa: E402  (the und
 GARMENTS.update(hum_skeleton.SKELETON)                    # for the Undead builds only; reload it before this module)
 import hum_rags                                           # noqa: E402  (rags: torn in the geometry; reload it before
 GARMENTS.update(hum_rags.RAGS)                            # this module, like hum_robe)
+import hum_ghoul                                          # noqa: E402  (the ghoul's claws: the Ghoul builds only)
+GARMENTS.update(hum_ghoul.GHOUL_WEAR)
+import hum_lich                                           # noqa: E402  (the lich's crown: the Undead builds only)
+GARMENTS.update(hum_lich.LICH_WEAR)
+import hum_elemental                                      # noqa: E402  (the earth elemental's rocks: the Orc builds only)
+GARMENTS.update(hum_elemental.ELEMENTAL_WEAR)
+import hum_wings                                          # noqa: E402  (demons', imps' and angels' wings)
+GARMENTS.update(hum_wings.WINGS)
 
 
 # ------------------------------------------------------------------ objects

@@ -144,13 +144,22 @@ def _cloak_radii(P, Z, TH, cy, z_neck, z_sh, t):
     return R + off[:, None] + folds
 
 
-def _cloak(B):
+def _vampire_cape(B):
+    """DEPRECATED (see DEPRECATED below). The vampire's (2026-10-23): the Cloak's cape to the ankles, with a tall
+    collar standing up behind the head and flaring out, open in front; no hood (nothing to tuck the collar under)."""
+    return _cloak(B, long=True, collar=VAMP_COLLAR)
+
+
+VAMP_COLLAR = dict(height=0.17, rings=6, flare=0.085, open_span=0.6 * math.pi)
+
+
+def _cloak(B, long=False, collar=None):
     co = B.co
     shoulder = {s: B.j[f"upperarm_{s}"] for s in "lr"}
     z_neck = float(B.j["neck_01"][2])
     z_sh = float(max(shoulder["l"][2], shoulder["r"][2]))
     knee = float(B.j["calf_l"][2])
-    z_hem = knee - 0.16
+    z_hem = knee - 0.16 if not long else float(B.j["foot_l"][2]) + 0.07
     cy = float(B.j["spine_02"][1])
     # the arms as they hang when animated: vertical columns from the shoulder joints down to the hips
     arm_pts = []
@@ -169,7 +178,7 @@ def _cloak(B):
     P = np.vstack([body, np.array(arm_pts), _worn_under(B, shoulder)])
     # rings: collar, over the shoulders, then straight down
     Z = np.r_[np.linspace(z_neck + 0.05, z_sh + 0.05, 4), np.linspace(z_sh + 0.01, z_sh - 0.12, 5),
-              np.linspace(z_sh - 0.15, z_hem, 14)]
+              np.linspace(z_sh - 0.15, z_hem, 18 if long else 14)]
     t = np.clip((z_sh + 0.05 - Z) / (z_sh - z_hem), 0, 1)             # 0 at the shoulders .. 1 at the hem
     segs = 48
     th_unit = np.linspace(-1, 1, segs + 1)
@@ -182,13 +191,28 @@ def _cloak(B):
     R = _cloak_radii(P, Z, TH, cy, z_neck, z_sh, t)
     # the collar tucks 1.2 cm inside the hood, which then covers its edge (seen from above, a collar outside
     # the hood left a ring-shaped gap into the cloak); the next ring eases out from it
-    r_hood = _hood_ring(cy, Z[0], TH[0])
+    r_hood = _hood_ring(cy, Z[0], TH[0]) if collar is None else None
     if r_hood is not None:
         neck = co[B.part == "neck"]
         zq = min(Z[0], float(neck[:, 2].max()) - 0.01)                  # the neck mesh's top on tall builds
         r_neck = _support_rings(neck, 0.0, cy, np.array([zq]), TH[0], band=0.015)[0] + 0.012
         R[0] = np.minimum(R[0], np.maximum(r_hood - 0.012, r_neck))
         R[1] = np.minimum(R[1], 0.5 * (R[0] + R[2]) + 0.01)
+    k_clasp = 1
+    if collar is not None:
+        # a standing collar above the cape's top ring: open in front within a few centimetres (the clasp stays at
+        # the throat), flaring out as it rises behind the head
+        hs = np.linspace(collar["height"], collar["height"] / collar["rings"], collar["rings"])     # top first
+        f = hs / collar["height"]
+        span_c = math.pi - (math.pi - collar["open_span"]) * ss(0.0, 0.35, f)
+        THc = np.array([math.pi + th_unit * sp for sp in span_c])
+        Rc = np.array([np.interp(THc[k], TH[0], R[0]) for k in range(len(hs))])
+        Rc += (0.008 + collar["flare"] * f ** 1.4)[:, None]
+        Z = np.r_[Z[0] + hs, Z]
+        TH = np.vstack([THc, TH])
+        R = np.vstack([Rc, R])
+        t = np.r_[np.zeros(len(hs)), t]
+        k_clasp = len(hs) + 1
     n = segs + 1
     # a rolled edge: the collar's top turned in 6 mm
     Zs = np.r_[Z[0] + 0.006, Z]
@@ -203,7 +227,7 @@ def _cloak(B):
     V, F = C.add_rim(V, F, 0.005, B)
     U = np.vstack([U, np.zeros((len(V) - len(U), 2))])
     # the clasp: two iron studs where the collar meets at the throat
-    O = [np.array([0.0, cy, Z[1]])] * 2
+    O = [np.array([0.0, cy, Z[k_clasp]])] * 2
     D = [np.array([math.sin(math.pi + s * CLOAK_SPAN_TOP * 0.97), -math.cos(math.pi + s * CLOAK_SPAN_TOP * 0.97), 0])
          for s in (-1, 1)]
     Pc, Nc = A.cast(V, F, O, D)
@@ -576,4 +600,11 @@ CLOAK = {
                       # hides nothing: from below, the throat shows under the hood's cowl (hiding the neck and
                       # collar regions left a hole there - the head looked cut off); it doesn't poke through
                       companion=True, hide=[], cover=[]),
+}
+
+# DEPRECATED with the vampire (2026-10-23, Daniel: "let's give up on the vampire, make it deprecated"): not in CLOAK,
+# so no build or export makes it. The long cape with a standing collar, worn like the Cloak without the hood.
+DEPRECATED = {
+    "VampireCape": dict(slot="cloak", layer=5, material="cloth", build=_vampire_cape, smooth_keys=10, hide=[],
+                        cover=[]),
 }

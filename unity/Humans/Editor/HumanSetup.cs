@@ -49,6 +49,28 @@ namespace Humans.EditorTools
                 Debug.LogError("[HumanSetup] leave play mode first: the showcase scene can't be rebuilt while playing");
                 return;
             }
+            var prefab = RebuildPrefab();
+            BuildScene(prefab);
+            RenderChecks();
+            Debug.Log($"[HumanSetup] done: {PrefabPath}, {ScenePath}, renders in {OutDir}");
+        }
+
+        /// <summary>Everything but the showcase scene (which opens in Single mode): models, materials, clips,
+        /// controllers, the prefab and its pieces - for an editor other work has scenes open in.</summary>
+        [MenuItem("Tools/Humans/Rebuild Prefab Only")]
+        public static void RebuildPrefabOnly()
+        {
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+            {
+                Debug.LogError("[HumanSetup] leave play mode first");
+                return;
+            }
+            RebuildPrefab();
+            Debug.Log($"[HumanSetup] done: {PrefabPath} (showcase scene not rebuilt)");
+        }
+
+        static GameObject RebuildPrefab()
+        {
             HumanFaceConfig.ClearCache();
             HumanFace.ClearPieceCache();
             foreach (var d in new[] { Materials, Prefabs, Scenes, Anim, Data, PieceDir }) EnsureFolder(d);
@@ -62,10 +84,7 @@ namespace Humans.EditorTools
             EnsureFolder(Clips);
             ConfigureClips();
             var (male, female) = BuildControllers();
-            var prefab = BuildPrefab(mats, male, female);
-            BuildScene(prefab);
-            RenderChecks();
-            Debug.Log($"[HumanSetup] done: {PrefabPath}, {ScenePath}, renders in {OutDir}");
+            return BuildPrefab(mats, male, female);
         }
 
         static void EnsureFolder(string path)

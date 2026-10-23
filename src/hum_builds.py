@@ -23,7 +23,7 @@ import hum_faces as F
 import hum_paint
 import hum_rig
 
-BUILD_NAMES = ["Slim", "Strong", "Heavy", "Orc", "Undead"]
+BUILD_NAMES = ["Slim", "Strong", "Heavy", "Orc", "Undead", "Ghoul"]
 BODY_KEYS = ({"Masculine", "Feminine", "Heavy", "Thin", "Muscular", "Slight"}
              | {f"{s}_{d}" for s in F.BODY_SLIDERS + ["NeckWidth"] for d in ("Pos", "Neg")})
 
@@ -67,6 +67,18 @@ _SHAPE = {
                           ArmMuscle_Neg=0.9, LegMuscle_Neg=0.7, ShoulderMuscle_Neg=0.8, BackMuscle_Neg=0.6,
                           NeckThick_Neg=0.6, NeckForward_Pos=0.9, NeckLength_Pos=0.3, UpperArmSize_Neg=0.5,
                           Hunch_Pos=0.9, Ribs_Pos=1.0, Sunken_Pos=0.9, Bony_Pos=1.0),
+    # 2026-10-23: the ghouls' (a zombie type: hum_undead GHOUL, hum_ghoul's claws; BUILD_ODDS 0): the Undead build
+    # with long thin clawed fingers, long arms, the shoulders hunched up and a hump for the runtime arch
+    ("M", "Ghoul"): dict(Thin=1.0, Slight=1.0, ChestMuscle_Pos=0.0, ShoulderWidth_Pos=0.1, ArmMuscle_Neg=1.0,
+                         LegMuscle_Neg=0.8, ShoulderMuscle_Neg=1.0, ChestMuscle_Neg=1.0, BackMuscle_Neg=0.8,
+                         NeckThick_Neg=0.8, NeckForward_Pos=1.0, Waist_Neg=0.6, NeckLength_Pos=0.4,
+                         UpperArmSize_Neg=0.6, TorsoDepth_Neg=0.3, VShape_Neg=0.3, Hunch_Pos=1.0, Ribs_Pos=1.0,
+                         Sunken_Pos=1.0, Bony_Pos=1.0, Claws_Pos=1.0, LongArms_Pos=1.0, Arch_Pos=1.0),
+    ("F", "Ghoul"): dict(Thin=1.0, Slight=1.0, Bust_Pos=0.0, Bust_Neg=0.3, Hips_Pos=0.1, Waist_Neg=0.5,
+                         ArmMuscle_Neg=0.9, LegMuscle_Neg=0.7, ShoulderMuscle_Neg=0.8, BackMuscle_Neg=0.6,
+                         NeckThick_Neg=0.6, NeckForward_Pos=0.9, NeckLength_Pos=0.3, UpperArmSize_Neg=0.5,
+                         Hunch_Pos=0.9, Ribs_Pos=1.0, Sunken_Pos=0.9, Bony_Pos=1.0, Claws_Pos=1.0, LongArms_Pos=0.9,
+                         Arch_Pos=0.9),
 }
 BUILDS = {}
 for _sex in "MF":
@@ -74,7 +86,7 @@ for _sex in "MF":
         _k = dict(_BASE[_sex])
         _k.update(_SHAPE[(_sex, _name)])
         BUILDS[_sex + _name] = dict(sex=_sex, name=_name, keys={k: v for k, v in _k.items() if v > 0})
-BUILD_ODDS = {"Slim": 0.4, "Strong": 0.3, "Heavy": 0.3, "Orc": 0.0, "Undead": 0.0}
+BUILD_ODDS = {"Slim": 0.4, "Strong": 0.3, "Heavy": 0.3, "Orc": 0.0, "Undead": 0.0, "Ghoul": 0.0}
 
 
 def tag_of(masc, name):
@@ -249,7 +261,7 @@ def build_wardrobe(scene, arm, sk, tags=None, names=None, log=print):
                 else:
                     ob, nk = hum_cloth.build_garment(scene, B, name, arm, sk, body)
                 to_rest(ob, bs.dJ, sk)                        # others read it back via build_coords
-                if name in ("Cloak", "KnightCape"):           # capes: weights smoothed over the mesh
+                if name in ("Cloak", "KnightCape", "VampireCape"):   # capes: weights smoothed over the mesh
                     import hum_cloak
                     hum_cloak.reskin(ob, arm, sk)
                 ob.hide_set(True)

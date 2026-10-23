@@ -179,6 +179,11 @@ namespace Humans
                 f.beardColor = HumanFaceConfig.Hex(p.beardColor);
                 f.beardShadow = 0f;
             }
+            if (p.noBeard)
+            {
+                f.beardStyle = "";
+                f.beardShadow = 0f;
+            }
             if (p.heightMax > p.heightMin || p.heightMax > 0f) f.height = rng.Range(p.heightMin, p.heightMax);
             f.hairlineTint = f.hairStyle == "" || f.hairStyle == "Mohawk" ? 0f : 1f;
             // the undead (hum_undead.undead_face); drawn after the rest, so the orcs' rolls are unchanged
@@ -200,6 +205,11 @@ namespace Humans
                     f.SetGarment(cfg, g, HumanFaceConfig.Hex(pal[rng.Int(pal.Length)]));
                 }
             if (p.glow != null && p.glow.Length > 0) f.glow = HumanFaceConfig.Hex(p.glow[rng.Int(p.glow.Length)]);
+            if (p.ageMax > 0f)                                  // drawn last: the presets before it roll as they did
+            {
+                f.age = rng.Range(p.ageMin, p.ageMax);
+                f.ageLines = Mathf.Max(0f, (f.age - 0.4f) / 0.6f) * 1.1f;
+            }
             return true;
         }
 

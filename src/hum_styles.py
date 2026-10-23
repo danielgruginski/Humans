@@ -46,6 +46,7 @@ BEARD = {
     # an orc's: two tusks from the corners of the lower lip (no beard shell); worn in the beard slot, so it
     # follows the mouth and jaw keys like a beard, coloured ivory by the beard colour
     "Tusks": dict(tusks=True, length=0.031, width=0.0085, thick=0.0115, splay=0.3, forward=0.006, sides=7, steps=6),
+    "Horns": dict(horns=True, length=0.14, width=0.032, thick=0.034, spread=0.55, sides=8, steps=9),   # the demon's
 }
 
 BROWS = {
@@ -202,9 +203,76 @@ def tusk_parts(H, st, seed=0):
     return [clumps_part(H, spines, W, T, R, sides=st.get("sides", 7), tex_len=0.03, smooth=0.15, tip_w=0.18)]
 
 
+# DEPRECATED with the vampire (2026-10-23, Daniel: "let's give up on the vampire, make it deprecated"): not in BEARD, so
+# no build or export makes it; hum_orcs.build_tusks(style=...) needs it put back in BEARD to build it.
+DEPRECATED_BEARD = {
+    "Fangs": dict(fangs=True, length=0.014, width=0.004, thick=0.0034, apart=0.21, sides=6, steps=5),
+}
+
+
+def fang_parts(H, st, seed=0):
+    """DEPRECATED (see DEPRECATED_BEARD). Two fangs (the vampire's, 2026-10-23): the upper canines out from under the
+    upper lip, a little apart, down over the lower lip, their tips turning in a touch. Like the tusks, their own
+    shading."""
+    F = H.F
+    H.domes = False
+    L = st.get("length", 0.011)
+    k = st.get("steps", 5)
+    up, fwd = np.array([0.0, 0.0, 1.0]), np.array([0.0, -1.0, 0.0])
+    spines, W, T, R = [], [], [], []
+    for sx in (1.0, -1.0):
+        p0 = np.array([sx * F.mouth_w * st.get("apart", 0.21), F.mouth[1] - 0.004, F.mouth[2] + 0.0015])
+        loc, n, _ = H.nearest_skin(p0)
+        loc, n = np.asarray(loc, float), _unit(np.asarray(n, float))
+        pts = []
+        for i in range(k + 1):
+            t = i / k
+            pts.append(loc - n * 0.0015 + n * 0.0022 * min(1.0, t * 3.0) - up * L * t
+                       + fwd * 0.0012 * math.sin(math.pi * t) - np.array([sx, 0.0, 0.0]) * 0.0012 * t * t)
+        spines.append(np.array(pts))
+        W.append(st["width"])
+        T.append(st["thick"])
+        R.append(0.5)
+    return [clumps_part(H, spines, W, T, R, sides=st.get("sides", 6), tex_len=0.02, smooth=0.1, tip_w=0.12)]
+
+
+def horn_parts(H, st, seed=0):
+    """Two horns (the demon's, 2026-10-23): rooted on the brow's corners above the temples, sweeping up and out, then
+    back, the tips turning up again (a bull's or ram's line). A beard style like the tusks (rigid on the head, bound to
+    the face keys); their own shading."""
+    F = H.F
+    H.domes = False
+    L = st.get("length", 0.13)
+    k = st.get("steps", 9)
+    for_up = np.array([0.0, 0.0, 1.0])
+    back = np.array([0.0, 1.0, 0.0])                       # MPFB: +Y is the back
+    spines, W, T, R = [], [], [], []
+    for sx in (1.0, -1.0):
+        e = F.eye["l" if sx > 0 else "r"][0]
+        p0 = np.array([sx * (abs(e[0]) + 0.012), e[1] + 0.03, e[2] + 0.052])
+        loc, n, _ = H.nearest_skin(p0)
+        loc, n = np.asarray(loc, float), _unit(np.asarray(n, float))
+        out = np.array([sx, 0.0, 0.0])
+        pts = []
+        for i in range(k + 1):
+            t = i / k
+            a = math.pi * 0.9 * t                          # the sweep: out and up, back, then up at the tip
+            pts.append(loc - n * 0.006 + out * L * st.get("spread", 0.55) * math.sin(a * 0.75)
+                       + for_up * L * (0.35 * t + 0.25 * t ** 3) + back * L * 0.45 * (1 - math.cos(a)) / 2)
+        spines.append(np.array(pts))
+        W.append(st["width"])
+        T.append(st["thick"])
+        R.append(0.5)
+    return [clumps_part(H, spines, W, T, R, sides=st.get("sides", 8), tex_len=0.05, smooth=0.15, tip_w=0.1)]
+
+
 def beard_parts(H, st, seed=0):
     if st.get("tusks"):
         return tusk_parts(H, st, seed)
+    if st.get("horns"):
+        return horn_parts(H, st, seed)
+    if st.get("fangs"):
+        return fang_parts(H, st, seed)
     rng = np.random.default_rng(seed + 77)
     H.domes = False
     mask = lambda P: H.beard_mask(P, **st)

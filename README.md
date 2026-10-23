@@ -669,3 +669,107 @@ also be used to improve the zombie clothing"). Torn in the geometry, not only pa
   config and HumanCloth.shader; Configure Model, Build Materials, Rebuild Prefab).
 - Wearing them: `RagShirt` + `RagTrousers` (barefoot), `RagTunic` over `RagShirt`, `Skeleton` + `RagTrousers` + a
   belt. MedievalSetting dresses its zombies and barrow skeletons in them and offers two rag start outfits.
+
+### The ghoul (`src/hum_ghoul.py`, ghoul shapes in `src/hum_undead.py`, 2026-10-23)
+
+A zombie type with big claws and an arched back (Daniel: an undead "with big claws and an arched posture", "ghoul being a
+type of zombie"). The human made into it like the zombie, plus:
+
+- **Ghoul builds** `MGhoul` / `FGhoul` (`hum_builds`, odds 0): the Undead build with four more preset-only keys (in
+  `hum_undead.DEFORMS`, added in place with `hum_faces.add_keys` + `hum_orcs.propagate_keys`): body **Claws** (each
+  finger's phalanges 30 / 45 / 55 % longer, the thumb's 25 / 35 %, the finger skin drawn in by a quarter: long thin
+  fingers), **LongArms** (upper arm +2.5 cm, forearm +4 cm, stretched evenly along each bone: `_stretch`), **Arch** (the
+  shoulders hunched up and forward, the head further forward, a broad hump from mid-back to the neck, the shoulder blades
+  standing out); face **Lipless** (the lips shrunk back onto MPFB's upper-teeth helper: a gaunt grimace, no pout).
+  Only the rags and the claws are built for them (`build_wardrobe(tags=["MGhoul", "FGhoul"], names=["RagShirt",
+  "RagTunic", "RagTrousers", "GhoulClaws"])`): any other garment on a ghoul shows nothing.
+- **GhoulClaws** (slot `claws`, material `bone`, colour group **Horn**: `hum_ghoul.HORN`, old yellowed horn; its own
+  maker like the Skeleton, the Ghoul builds only, shipped in `Human_Cloth_Undead.fbx`): a hooked talon out of every
+  finger's nail (8-12 cm, rigid on the `_03` bone, curling toward the palm) and one on each toe (on its toenail: MPFB's
+  `toenails` group split into nails; turned up until it clears the sole by 3 mm), rigid on `ball_*`. 1200 / 640 / 180
+  triangles. Daniel: "claws can be even larger, it is hard to see them from a distance" - 3.4-5 cm, then 5.5-8, now
+  8-12 and lighter (a dark horn vanished over the ground at the game camera).
+- **Preset `Ghoul`** (`hum_undead.GHOUL`): ashen grey / bluish / old-bone tones, white eyes (milk 0.9-1), hairless
+  (`hairStyles [""]`, `brows [""]`, `noBeard`: the rolled villager's beard goes - new C# field), heavy brow, wide
+  lipless mouth, pointed ears, rot 0.45-0.8 (drier than a zombie), wears `GhoulClaws`. `outfit` (rags) is for the
+  Blender preview only; a game dresses its own (`HumanActor.Dress`, list the claws: "GhoulClaws:#a8946a").
+- **The arch is a runtime bend**, not geometry: a Humanoid clip sets the spine's rotations, so the back is bent after
+  the Animator (the goblins' `GoblinPosture`: spine 8 / chest 7 / upper chest 8 / neck -9 / head -12 degrees x amount;
+  ghouls 1-2). Clips that suit (Kevin Iglesias, MedievalSetting): `Crouch01_Idle`, `Crouch01_Walk_Forward` (stalking),
+  `Sprint01_Forward` (arch 1.5), `AttackDW01/02` (two-handed claw rakes), `Zombie_Bite` (arch 0.5), `Loot01 - Loop`
+  (feeding). Check: MedievalSetting `Tools > Game > Checks > Ghoul Lineup` (`GhoulCheck`: a preview scene, no scene
+  switch) -> `Logs/Ghoul` (three-quarter, profile, the game camera at 22 and 13 m).
+- Export without touching the other cloth families: `hum_ghoul.export()` (body, hair, Rags, Undead, config, rig). Unity:
+  `Tools > Humans > Rebuild Prefab Only` (new: everything but the showcase scene, which opens in Single mode).
+
+### The lich (`src/hum_lich.py`, preset in `src/hum_undead.py`, 2026-10-23)
+
+A card-game unit (Daniel: "build the creatures"): a skeleton king-sorcerer.
+
+- **Preset `Lich`** (`hum_undead.LICH`, the Undead build): wears the `Skeleton` and the `LichCrown`, a cold light in the
+  orbits (green, violet or cyan), clothes torn and cut (tatter 0.15-0.35: more read as speckles at the game camera). Dress
+  it in the magister's robe (`Trousers`, `Robe` #47235e, `RobeTrim` #b08a34, `Boots`; a darker violet read as black in
+  Unity). Upright: the human clips; the goblin shaman's `Shaman_Hex` / `Shaman_Chant` play as its spells.
+- **LichCrown** (slot `crown`, material `plate` + an empty `Ornament` UV like every plate, colour group Blackened; its own
+  maker, the Undead builds only, in `Human_Cloth_Undead.fbx`): a band of blackened iron fitted to the build's skull
+  (`skull`: the Skeleton's head pieces in build space, the orbits' lights for the brow height), lower over the brow and
+  4.4 cm up at the back (5.4 sat perched), its inner radius the cranium's support per direction, and nine jagged points,
+  the front ones tallest; smooth round the band, sharp at its corners (flat 5-degree facets read as stripes). Rigid on
+  the head. 648 / 360 / 144 triangles. Build after the Skeleton: `build_wardrobe(tags=["MUndead", "FUndead"],
+  names=["LichCrown"])`.
+- Check: MedievalSetting `Tools > Game > Checks > Lich Lineup` (`GhoulCheck.RunLich`) -> `Logs/Ghoul/lich_*.png`. In edit
+  mode the skirt ring doesn't run, so wide stances push the legs through the robe (play mode lifts it).
+
+### The vampire - deprecated (2026-10-23)
+
+Daniel on the first preview: "wow, let's give up on the vampire, make it deprecated" / "I just really disliked the
+fangs, these are not right" (two ivory cones from under the upper lip over the closed lower lip, built like the orcs'
+tusks). Kept for reference, never shipped: `hum_undead.VAMPIRE` (not in PRESETS), `hum_styles.DEPRECATED_BEARD["Fangs"]`
++ `fang_parts`, `hum_cloak.DEPRECATED["VampireCape"]` (the Cloak's cape to the ankles with a standing collar:
+`_cloak(B, long=True, collar=VAMP_COLLAR)`). Teeth on these heads need a real mouth (open lips, teeth, interior) first.
+
+## More peoples: elves, giants, earth elementals (`src/hum_races.py`, `src/hum_elemental.py`, 2026-10-23)
+
+Card-game units (Daniel: "Keep moving on the creatures / humanoids"), presets like the orcs' and the undead's
+(`hum_races.PRESETS`, exported in the config with the undead's exporter; preview: `hum_undead.undead_face(seed, P)`).
+
+- **Elf** (the Slim build): long pointed ears (EarPointed 1, EarSize, EarOut), tilted eyes, high cheekbones, a narrow
+  chin and nose, finer lips (Lipless 0.45: the head's own pout), fair to dusky skin, no beard, hair that leaves the ears
+  out (Ponytail, Swept, Bun - Long covered them), tall. **Ageless:** a new preset range `age` (C# `ageMin` / `ageMax`,
+  drawn last in ApplyPreset so the other presets roll as before) - rolled ages made some elves old; under 0.12 the Young
+  key made them childlike, so 0.12-0.3. Dress: shirt, leggings, the leather coat in forest greens, boots, a cloak
+  *without* its hood ("-CloakHood": the hood hides the ears).
+- **Giant** (the Orc build: every orc garment fits): human, weathered skin, heavy brow and jaw, small deep eyes, broad
+  nose, shaggy hair, the man's rolled beard; dressed in the orcs' hide (OrcKilt, OrcMantle, Bracers). Its size is a scale
+  in Unity (the build is a person's): ~2.6 = a 4.5 m hill giant.
+- **EarthElemental** (`hum_elemental`, a garment like the Skeleton on the Orc builds, slot `skeleton`, material `bone` so
+  slot 1 is the glow, colour group **Stone** - new C# palette `stone`): faceted rocks (jagged icospheres, flat shaded)
+  along every limb bone sized to the body's thickness there x1.1-1.3, plates on the chest and back, the waist's sides,
+  boulders over the shoulders (on the clavicles), a blocky head with brow and jaw; glowing eye slits and a core showing
+  between the chest plates (the preset's glow: magma, amber, moss green, crystal blue). It hides the body and head. Each
+  rock rigid on one bone. 4,272 / 1,152 / 1,040 triangles. `Human_Cloth_Elemental.fbx` (its own family). Scale ~1.25 in
+  Unity. The first stone (#77705f) read near-black over dark ground.
+- Checks: MedievalSetting `Tools > Game > Checks > Elf / Giant / Earth Elemental Lineup` (`GhoulCheck.Preset`: any preset
+  on a build, dressed and scaled) -> `Logs/Ghoul/{elf,giant,earth}_*.png`.
+
+### Demons, imps, angels and their wings (`src/hum_races.py`, `src/hum_wings.py`, 2026-10-23)
+
+- **Horns** (`hum_styles.BEARD["Horns"]`, `horn_parts`): a beard style like the tusks, rooted above the temples,
+  sweeping out, back and up (14 cm). Built with `hum_races.build_horns()` (= `hum_orcs.build_tusks(style="Horns")`, then
+  `rigid_keys`: each horn's keys become a rigid move with the skin at its root - Surface Deform bound a 13 cm horn to the
+  skin's local stretch and with a demon's face the horns stood 3 cm off the skull). Not stuck on the face (see "The
+  vampire - deprecated").
+- **Demon** (the Orc build): deep red (one charcoal) skin, burning yellow eyes, horns, pointed ears, heavy scowling brow;
+  wears `DemonWings`. Dress it in the orcs' kilt, spiked pauldrons and bracers (blackened).
+- **Imp** (the Slim build, scale ~0.55 in Unity): red to violet, huge ears, a pinched grinning face, horns, bald, wings.
+- **Angel** (the Slim build): serene, fair or golden, gold or pale hair, no beard, ageless; wears `AngelWings`; a white
+  robe with gold trim.
+- **Wings** (`hum_wings.WINGS`, slot `wings`, `Human_Cloth_Wings.fbx`): rigid on spine_03, half raised behind the shoulders
+  (up, out and back, clear of the arms), sized from the build's torso; an arm (root over the shoulder blade -> elbow ->
+  wrist above the head). **DemonWings** (Orc + Slim builds, material `leather`, group Blackened): four finger spars from
+  the wrist, a scalloped membrane between them down the back to the waist, a thumb claw; 388 / 292 / 236 tris.
+  **AngelWings** (Slim + Strong builds, material `bone`, group Bone): a hand, 9 primaries, 10 secondaries, 4 tertials and
+  two rows of coverts as flat tapered blades in layers (narrow ones read as a comb: widened); 696 / 420 / 252 tris.
+  **They don't move**: a twisting attack swings them with the chest. Flapping needs wing bones (helpers off spine_03,
+  driven at runtime like the cape chain) - not built.
+- Checks: `Tools > Game > Checks > Demon / Imp / Angel Lineup` -> `Logs/Ghoul/{demon,imp,angel}_*.png`.

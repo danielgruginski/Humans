@@ -570,3 +570,38 @@ Done: head + eyes, stylisation, UVs, paint masks, preview shader, 98 keys, rando
   read as clay). Renders: `renders/skin_matte_before_after.png`; Unity `Logs/SkinLook`. Goblins were already matte
   (URP Lit 0.08).
 
+
+- 2026-10-23: **the ghoul** (Daniel: "Undead first, you can start with the ghoul" / "ghoul being a type of zombie"; the
+  ask was an undead "with big claws and an arched posture"). README "The ghoul": Ghoul builds + keys Claws, LongArms,
+  Arch (body) and Lipless (face), added in place and propagated (63 hair/LOD objects); rags + GhoulClaws built for
+  MGhoul/FGhoul only; preset `Ghoul` (noBeard: new C# field; `horn` palette + "Horn" group in HumanFaceConfig); exported
+  with `hum_ghoul.export()` (no other cloth family touched), installed in MedievalSetting, `Rebuild Prefab Only` (new
+  menu item: no showcase scene, safe while others have scenes open). Daniel mid-way: "claws can be even larger, it is
+  hard to see them from a distance" -> 8-12 cm, thicker, light horn. MedievalSetting `GhoulCheck` renders a lineup on
+  Kevin crouch / sprint / dual-wield clips and the zombie clips with the GoblinPosture bend applied (Logs/Ghoul).
+  Gotchas: a key added to hum_faces.BODY_SLIDERS needs hum_builds reloaded too, or add_keys files it as a face key (no
+  joint deltas); toe claws pointing down went 7 mm under the floor (turned up until they clear it).
+  Open: not a game creature yet (no def, clip set or GoblinPosture hook in Creature.DressHuman: where ghouls live and
+  how they fight is Daniel's call); no teeth or mouth interior (Lipless only flattens the lips); with fists (Kevin's
+  punches) the talons pass through the palm; the Ghoul builds carry rags and claws only.
+
+- 2026-10-23 (same day, Daniel: "don't bother with adding them to the game, build the creatures"): the undead batch from
+  his card game. **Lich** (README "The lich"): preset + LichCrown fitted to the skull, robe in the magister's colours,
+  checked in Unity (`Lich Lineup`); Human_Cloth_Undead.fbx + config re-exported and installed, Rebuild Prefab Only.
+  **Vampire deprecated** (README "The vampire - deprecated"): he disliked the fangs on sight; the preset, Fangs and
+  VampireCape are unregistered, their built meshes deleted from humans.blend, nothing was exported. The zombie wolf is
+  in the Beasts repo.
+  Gotcha: a plate garment needs the `Ornament` UV (zeros) or Humans/Plate shows ornament on it.
+
+- 2026-10-23 (later, Daniel: "Keep moving on the creatures / humanoids"): **elves, giants, earth elementals** (README "More
+  peoples"). New: `hum_races.py` (ELF, GIANT, EARTH_ELEMENTAL), `hum_elemental.py` (the rock garment), C# preset fields
+  `ageMin`/`ageMax` (drawn last) and the `stone` palette ("Stone" group); `Human_Cloth_Elemental.fbx`. Installed with the
+  install script + Rebuild Prefab Only; checked in Unity lineups. Gotchas: the Cloak's hood is a companion and comes with
+  it (hid the elves' ears: "-CloakHood"); a preset can't force the sex (sexMin only pushes further the way it already
+  leans), so the elemental is built on both Orc builds. Open: the elves' faces keep the head's slightly melancholy mouth;
+  no elven garments (the leather coat in greens); the giant's face is a heavy human's.
+- Same round: **demon, imp, angel + wings** (README "Demons, imps, angels and their wings"): Horns beard style (rigid keys
+  per horn: long rigid pieces must not ride Surface Deform), presets DEMON/IMP/ANGEL, `hum_wings` (DemonWings, AngelWings,
+  rigid on spine_03). Exported Human_Hair.fbx (horns), Human_Cloth_Wings.fbx, config; Unity lineups checked. Open: wings
+  don't flap (no wing bones yet); the angel's feathers use the bone pattern (greyish: dress them white); the imp is a
+  scaled Slim body (no own proportions).

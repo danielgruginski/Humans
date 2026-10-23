@@ -50,9 +50,10 @@ ORC = dict(
 )
 
 
-def build_tusks(head=None):
+def build_tusks(head=None, style="Tusks", colour=(0.62, 0.55, 0.40)):
     """Beard_Tusks and its LODs (like hum_build.build_hair / hum_lod.piece_lods for this one style), bound to the
-    head keys, rigid on the head bone, with the CapCut / HoodCut UVs. Returns (name, tris, keys) per object."""
+    head keys, rigid on the head bone, with the CapCut / HoodCut UVs. Returns (name, tris, keys) per object.
+    style="Fangs": the vampire's fangs the same way."""
     import hum_styles, hum_hair, hum_paint, hum_lod, hum_material, hum_armor
     head = head or bpy.data.objects["Head"]
     arm = bpy.data.objects["HumanRig"]
@@ -66,12 +67,12 @@ def build_tusks(head=None):
     try:
         for lod in (0, 1, 2):
             H = hum_hair.HeadFrame(head)
-            ob = hum_styles.build(sc, H, "beard", "Tusks", lod=lod)
+            ob = hum_styles.build(sc, H, "beard", style, lod=lod)
             hum_paint.set_materials(ob, [mat])
             if lod:
                 hum_lod._place(sc, ob, lod)
             nk, _ = hum_hair.bind_keys(ob, head)
-            hum_material.set_hair_props(ob, (0.62, 0.55, 0.40))
+            hum_material.set_hair_props(ob, colour)
             for vg in list(ob.vertex_groups):              # rigid on the head, as hum_build.skin_all does beards
                 ob.vertex_groups.remove(vg)
             vg = ob.vertex_groups.new(name="head")

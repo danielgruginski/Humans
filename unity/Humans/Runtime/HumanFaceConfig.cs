@@ -102,6 +102,8 @@ namespace Humans
         public string[] linen, wool, leather, armorLeather, cloaks, padding, steel, blackened, suit;   // palettes (sRGB hex)
         public string[] fur, orcIron;                                   // the orcs' mantles and their dark iron (hum_orcgear)
         public string[] bone;                                           // the skeleton's bones (hum_undead.BONE)
+        public string[] horn;                                           // the ghoul's claws (hum_ghoul.HORN)
+        public string[] stone;                                          // the earth elemental's rocks (hum_elemental)
 
         /// <summary>Colour group of an armour-set piece (one colour per group): Leather, Plates (leather
         /// plates), Padding, Steel (mail and plate armour), Boots or Cloth.</summary>
@@ -134,6 +136,8 @@ namespace Humans
                 case "Fur": return fur ?? leather;
                 case "OrcIron": return orcIron ?? blackened ?? steel ?? wool;
                 case "Bone": return bone ?? linen;
+                case "Horn": return horn ?? bone ?? linen;
+                case "Stone": return stone ?? steel ?? wool;
                 case "Suit": return suit ?? wool;
                 case "Cloth": return wool;
                 default: return armorLeather;
@@ -148,7 +152,9 @@ namespace Humans
         [Serializable] public class PresetSlider { public string name; public float mean, jitter; }
         /// <summary>The undead's (hum_undead) as well: lipFromTone (their own lips, else the shader constant), rot and
         /// the chance of each wound set, clouded eyes (milk), torn clothes (tatter; tatterCut: holes cut out), garments
-        /// always worn (wear: the skeleton's bones, coloured from their group's palette) and the orbits' glow.</summary>
+        /// always worn (wear: the skeleton's bones, coloured from their group's palette) and the orbits' glow.
+        /// noBeard: the rolled face's beard goes (the ghoul: hairless). ageMin/ageMax: the face's age is drawn from it
+        /// (0 young adult .. 1 old; ageMax 0 keeps the rolled age) - the elves' ageless faces.</summary>
         [Serializable] public class Preset
         {
             public string name;
@@ -156,6 +162,8 @@ namespace Humans
             public float femScale = 1f;
             public string[] tones, irises, hairStyles, hairColors, brows;
             public string beard, beardColor, build;
+            public bool noBeard;
+            public float ageMin, ageMax;
             public float heightMin, heightMax, sexMin, blushMin, blushMax;
             public float[] lipFromTone, woundChance;
             public float rotMin, rotMax, tatterMin, tatterMax, milkMin, milkMax;

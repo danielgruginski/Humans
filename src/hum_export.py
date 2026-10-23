@@ -60,8 +60,16 @@ def cloth_family(garment):
         return "Orc"
     if garment in hum_rags.RAGS:                       # rags (2026-10-12): torn in the geometry, beggars and the dead
         return "Rags"
-    if garment in hum_skeleton.SKELETON:               # the undead's bones
-        return "Undead"
+    import hum_ghoul
+    import hum_lich
+    if garment in hum_skeleton.SKELETON or garment in hum_ghoul.GHOUL_WEAR or garment in hum_lich.LICH_WEAR:
+        return "Undead"                                # the undead's bones, the ghoul's claws, the lich's crown
+    import hum_elemental
+    if garment in hum_elemental.ELEMENTAL_WEAR:        # the earth elemental's rocks (2026-10-23)
+        return "Elemental"
+    import hum_wings
+    if garment in hum_wings.WINGS:                     # demons', imps' and angels' wings (2026-10-23)
+        return "Wings"
     if garment in hum_cloak.CLOAK:
         return "Cloak"
     if garment in hum_robe.ROBE:
@@ -235,7 +243,7 @@ def _skirt_slack(garment):
 
 
 def export_config():
-    import hum_cloak, hum_orcs, hum_undead
+    import hum_cloak, hum_orcs, hum_undead, hum_races
     F = hum_faces
     cfg = dict(
         sliders=[dict(name=n, hasNeg=neg is not None, presetOnly=n in F.PRESET_ONLY,
@@ -253,7 +261,7 @@ def export_config():
         garments=[dict(name=k, slot=g["slot"], layer=g["layer"], material=g["material"], hide=list(g["hide"]),
                        cover=list(hum_cloth.cover_of(k)),
                        # no cloak over pauldrons, gorgets or plate: it fits clothes (hum_cloak.bulky)
-                       excludes=list(g.get("excludes", [])) + (hum_cloak.cloak_excludes() if k == "Cloak" else []),
+                       excludes=list(g.get("excludes", [])) + (hum_cloak.cloak_excludes() if k in ("Cloak", "VampireCape") else []),
                        capCut=float(g.get("capcut", 0.0)), hidesHair=bool(g.get("hides_hair", False)),
                        hoodCut=bool(g.get("hoodcut", False)), group=g.get("group", ""),
                        hidesFaceHair=bool(g.get("hides_face_hair", False)),
@@ -279,8 +287,11 @@ def export_config():
         beardStyles=[dict(name=k or "", w=v) for k, v in F.BEARD_W.items()],
         browStyles=[dict(name=k, masc=v[0], fem=v[1]) for k, v in F.BROW_W.items()],
         # face presets over a rolled face: the orcs, the undead (zombie, skeleton)
-        presets=[hum_orcs.export(p) for p in hum_orcs.PRESETS] + [hum_undead.export(p) for p in hum_undead.PRESETS],
+        presets=[hum_orcs.export(p) for p in hum_orcs.PRESETS] + [hum_undead.export(p) for p in hum_undead.PRESETS]
+                + [hum_undead.export(p) for p in hum_races.PRESETS],                # elves, giants, earth elementals
         bone=hum_undead.BONE,                                              # the skeleton's colour group "Bone"
+        horn=hum_cloth.hum_ghoul.HORN,                                     # the ghoul's claws, colour group "Horn"
+        stone=hum_cloth.hum_elemental.STONE,                               # the earth elemental, colour group "Stone"
         shader=dict(shadeMax=hum_paint.SHADE_MAX, blushTint=list(hum_material.BLUSH_TINT[:3]),
                     freckleTint=list(hum_material.FRECKLE_TINT[:3]), lipFromTone=list(hum_material.LIP_FROM_TONE),
                     edgeDark=hum_material.EDGE_DARK),
