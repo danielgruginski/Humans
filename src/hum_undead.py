@@ -808,7 +808,9 @@ def undead_face(seed, preset=ZOMBIE, outfit=True):
     import hum_cloth
     import hum_ghoul
     import hum_elemental
-    palettes = {"Horn": hum_ghoul.HORN, "Blackened": F.BLACKENED, "Stone": hum_elemental.STONE}   # as GroupPalette
+    import hum_wings
+    palettes = {"Horn": hum_ghoul.HORN, "Blackened": F.BLACKENED, "Stone": hum_elemental.STONE,      # as GroupPalette
+                "Feather": hum_wings.FEATHER}
     for gname in preset.get("wear", []):
         o[gname] = srgb(rng.choice(palettes.get(hum_cloth.GARMENTS.get(gname, {}).get("group"), BONE)))
     if preset.get("glow"):

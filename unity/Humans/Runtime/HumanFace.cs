@@ -323,7 +323,7 @@ namespace Humans
             {
                 string g = kv.Key.Substring(6).Split('_')[0];
                 var mat = Config.FindGarment(g)?.material;
-                bool torn = mat != "plate" && mat != "bone";           // fabrics tear; iron and the bones don't
+                bool torn = mat != "plate" && mat != "bone" && mat != "feather";   // fabrics tear; iron, bones, feathers don't
                 for (int lod = 0; lod < LodCount; lod++)
                 {
                     var smr = Piece(kv.Key, lod, clothRoot);
@@ -347,6 +347,14 @@ namespace Humans
                 bool cape = false;
                 foreach (var n in face.GarmentNames) cape |= Config.FindGarment(n)?.slot == "cloak";
                 if (chain.enabled != cape) chain.enabled = cape;
+            }
+            // the wings' chains while wings are worn (demons, imps, angels)
+            var wings = GetComponent<HumanWings>();
+            if (wings != null)
+            {
+                bool on = false;
+                foreach (var n in face.GarmentNames) on |= Config.FindGarment(n)?.slot == "wings";
+                if (wings.enabled != on) wings.enabled = on;
             }
             // and the skirt ring while a skirt is
             var skirt = GetComponent<HumanSkirt>();

@@ -104,6 +104,7 @@ namespace Humans
         public string[] bone;                                           // the skeleton's bones (hum_undead.BONE)
         public string[] horn;                                           // the ghoul's claws (hum_ghoul.HORN)
         public string[] stone;                                          // the earth elemental's rocks (hum_elemental)
+        public string[] feather;                                        // the angels' wings (hum_wings.FEATHER)
 
         /// <summary>Colour group of an armour-set piece (one colour per group): Leather, Plates (leather
         /// plates), Padding, Steel (mail and plate armour), Boots or Cloth.</summary>
@@ -138,6 +139,7 @@ namespace Humans
                 case "Bone": return bone ?? linen;
                 case "Horn": return horn ?? bone ?? linen;
                 case "Stone": return stone ?? steel ?? wool;
+                case "Feather": return feather ?? bone ?? linen;
                 case "Suit": return suit ?? wool;
                 case "Cloth": return wool;
                 default: return armorLeather;

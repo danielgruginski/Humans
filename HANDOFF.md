@@ -605,3 +605,11 @@ Done: head + eyes, stylisation, UVs, paint masks, preview shader, 98 keys, rando
   rigid on spine_03). Exported Human_Hair.fbx (horns), Human_Cloth_Wings.fbx, config; Unity lineups checked. Open: wings
   don't flap (no wing bones yet); the angel's feathers use the bone pattern (greyish: dress them white); the imp is a
   scaled Slim body (no own proportions).
+- 2026-10-23 (evening, Daniel: "Do these tasks you mentioned"): **the wings move + the angel's feathers** (README "Demons,
+  imps, angels and their wings"). Six wing helper bones (`hum_helpers.WING`, synced into the live HumanRig with
+  `sync_bones`: 102 bones), both wings re-skinned onto them, the rig json's `wings` list, the `HumanWings` runtime
+  component (beat, breath, fold) set up by `HumanSetup.AddWings` and switched on by `HumanFace`. The angel got
+  `T_Cloth_Feather` + `M_HumanFeather` (per-blade UVs) and a white "Feather" colour group (config `feather`). Exported
+  Human_Body.fbx, Human_Cloth_Wings.fbx, rig + config; installed, Rebuild Prefab Only; no clip import warnings after the
+  bone count change; checked with `Wings Beat` + `Angel Lineup`. Open: nothing in the game sets `flap`/`fold` yet (no
+  flying creature AI); from the front the wings show their shaded undersides (greyer).

@@ -158,7 +158,7 @@ namespace Humans.EditorTools
             }
         }
 
-        struct Mats { public Material skin, eye, hair, body, cloth, leather, quilt, mail, plate, fur, plateRough, bone, glow; }
+        struct Mats { public Material skin, eye, hair, body, cloth, leather, quilt, mail, plate, fur, plateRough, bone, feather, glow; }
 
         static Mats BuildMaterials()
         {
@@ -187,6 +187,7 @@ namespace Humans.EditorTools
                 fur = Make("M_HumanFur", "Humans/Cloth"),                 // the orcs' mantles (T_Cloth_Fur)
                 plateRough = Make("M_HumanPlateRough", "Humans/Plate"),   // the orcs' hammered dark iron (group OrcIron)
                 bone = Make("M_HumanBone", "Humans/Cloth"),               // the skeleton (T_Cloth_Bone, projected in 3D)
+                feather = Make("M_HumanFeather", "Humans/Cloth"),         // the angels' wings (T_Cloth_Feather, a feather per blade)
                 glow = Make("M_HumanGlow", "Humans/Glow"),                // the skeleton's orbits
             };
             mats.plate.SetTexture("_Pattern", Tex("T_Plate_Steel"));
@@ -220,8 +221,11 @@ namespace Humans.EditorTools
             mats.bone.SetFloat("_HemDark", 0f);
             mats.bone.SetFloat("_Triplanar", 1f);
             mats.bone.SetFloat("_TriTile", 0.15f);
+            mats.feather.SetTexture("_Pattern", Tex("T_Cloth_Feather"));
+            mats.feather.SetFloat("_Smoothness", 0.1f);
+            mats.feather.SetFloat("_HemDark", 0f);
             mats.glow.SetFloat("_Intensity", 2.5f);
-            foreach (var m in new[] { mats.cloth, mats.leather, mats.quilt, mats.mail, mats.fur, mats.bone }) m.SetColor("_Metal", new Color(0.68f, 0.68f, 0.7f));
+            foreach (var m in new[] { mats.cloth, mats.leather, mats.quilt, mats.mail, mats.fur, mats.bone, mats.feather }) m.SetColor("_Metal", new Color(0.68f, 0.68f, 0.7f));
             foreach (var m in new[] { mats.cloth, mats.leather, mats.quilt, mats.mail, mats.fur })    // the undead's torn clothes
                 m.SetTexture("_TatterTex", Tex("T_Cloth_Tatter"));
             mats.skin.SetTexture("_MaskA", Tex("T_Head_MaskA"));
@@ -246,7 +250,7 @@ namespace Humans.EditorTools
             mats.body.SetTexture("_RotMask", Tex("T_Body_Rot"));
             mats.body.SetTexture("_SuitPattern", Tex("T_Cloth_Weave"));
             foreach (var m in new[] { mats.skin, mats.eye, mats.hair, mats.body, mats.cloth, mats.leather, mats.quilt, mats.mail, mats.plate,
-                                      mats.fur, mats.plateRough, mats.bone, mats.glow }) EditorUtility.SetDirty(m);
+                                      mats.fur, mats.plateRough, mats.bone, mats.feather, mats.glow }) EditorUtility.SetDirty(m);
             AssetDatabase.SaveAssets();
             return mats;
         }
@@ -379,7 +383,27 @@ namespace Humans.EditorTools
         [System.Serializable] class JSpring { public string[] bones; }
         [System.Serializable] class JSkirtColumn { public string hip, knee, hem; public float side; }
         [System.Serializable] class JSkirt { public JSkirtColumn[] columns; public float raiseFrom, raiseTo; }
-        [System.Serializable] class JRig { public JBone[] bones; public JKey[] keys; public JRatios heightRatios; public string hipsBone; public JHelper[] helpers; public JSpring[] springs; public JSkirt[] skirts; }
+        [System.Serializable] class JWing { public string side; public string[] bones; }
+        [System.Serializable] class JRig { public JBone[] bones; public JKey[] keys; public JRatios heightRatios; public string hipsBone; public JHelper[] helpers; public JSpring[] springs; public JSkirt[] skirts; public JWing[] wings; }
+
+        /// <summary>HumanWings from human_rig.json's wing chains (bind rotations read here: call before anything poses
+        /// the model). Off until HumanFace sees a wings garment worn.</summary>
+        static void AddWings(GameObject root, Dictionary<string, Transform> boneMap)
+        {
+            var json = JsonUtility.FromJson<JRig>(File.ReadAllText(Path.GetFullPath(RigJson)));
+            if (json.wings == null || json.wings.Length == 0) return;
+            var w = root.AddComponent<HumanWings>();
+            w.facing = root.GetComponentInChildren<Animator>(true)?.transform;
+            foreach (var c in json.wings)
+            {
+                var bones = c.bones.Select(b => boneMap.TryGetValue(b, out var t) ? t : null).ToArray();
+                if (bones.Any(b => b == null)) { Debug.LogWarning("[HumanSetup] wings: bones missing"); continue; }
+                if (c.side == "l") { w.left = bones; w.restLeft = bones.Select(b => b.localRotation).ToArray(); }
+                else { w.right = bones; w.restRight = bones.Select(b => b.localRotation).ToArray(); }
+            }
+            w.enabled = false;
+            Debug.Log("[HumanSetup] wings " + string.Join(",", json.wings.Select(c => c.side)));
+        }
 
         /// <summary>HumanSkirt per skirt ring in human_rig.json: the columns' bind data (hanging directions in the
         /// Animator's frame, the knee points in each thigh's space) and capsules on the thighs, calves, heels and
@@ -640,7 +664,7 @@ namespace Humans.EditorTools
                     bool rough = cfg.FindGarment(g)?.group == "OrcIron";
                     var mat = kind == "leather" ? mats.leather : kind == "quilt" ? mats.quilt : kind == "mail" ? mats.mail
                             : kind == "plate" ? (rough ? mats.plateRough : mats.plate) : kind == "fur" ? mats.fur
-                            : kind == "bone" ? mats.bone : mats.cloth;
+                            : kind == "bone" ? mats.bone : kind == "feather" ? mats.feather : mats.cloth;
                     var list = Enumerable.Repeat(mat, smr.sharedMesh.subMeshCount).ToArray();
                     if (kind == "bone" && list.Length > 1) list[1] = mats.glow;    // the skeleton: bone, then the orbits' light
                     Cut(smr, list);
@@ -678,6 +702,7 @@ namespace Humans.EditorTools
             AddHelperBones(root, boneMap);
             AddSpringChains(root, boneMap);
             AddSkirts(root, boneMap);
+            AddWings(root, boneMap);
             // hand sockets from the rest skeleton (and the shield's on the left forearm), then the stand-in props
             // shown while their states play
             var socketR = AddHandSocket(boneMap, "r");

@@ -44,6 +44,19 @@ HELPERS = {
 }
 CAPE = ["xh_cape_0", "xh_cape_1", "xh_cape_2"]
 
+# the wings (2026-10-23, the demons', imps' and angels' - hum_wings): per side a chain off spine_03, root over the
+# shoulder blade -> elbow -> wrist -> hand, at the wing garments' joints measured on the Slim build (offsets from
+# spine_03's head; each node rides spine_03's per-build offset). Driven at runtime (Unity HumanWings: breathing,
+# flapping, folding); rigid on spine_03 in Blender.
+_WING = ((0.075, 0.0467, 0.171), (0.3094, 0.1852, 0.2775), (0.4373, 0.2598, 0.5759), (0.6077, 0.2704, 0.7037))
+WING = {}
+for _sd, _sx in (("l", 1.0), ("r", -1.0)):
+    _pts = [(_sx * p[0], p[1], p[2]) for p in _WING]
+    WING[_sd] = [f"xh_wing_{_sd}_{_i}" for _i in range(3)]
+    for _i in range(3):
+        HELPERS[WING[_sd][_i]] = dict(parent="spine_03" if _i == 0 else WING[_sd][_i - 1], host="spine_03",
+                                      head_off=_pts[_i], tail=("spine_03", _pts[_i + 1]), drive="wing")
+
 # the skirt ring, measured on the neutral body: per column (azimuth deg: 0 front, + toward the character's
 # left), the hip pivot as an offset from the pelvis (on the body at hip height + 1 cm; 5 cm lower behind, under
 # the buttocks - a pivot higher up swung the cloth above it back out, a bulge behind), the host of the lower
@@ -400,7 +413,7 @@ def drive(D, parent, rig=None):
             q = -q
         return Quaternion().slerp(q, f)
     for name, h in HELPERS.items():
-        if name not in D or h["drive"] == "spring":          # springs: rigid on their parent here
+        if name not in D or h["drive"] in ("spring", "wing"):   # springs, wings: rigid on their parent here
             continue
         if h["drive"] == "ring":
             D[name] = _ring(D, parent, rig, name, h)

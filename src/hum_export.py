@@ -198,9 +198,11 @@ def export_rig():
                              raiseTo=h.get("raise_", (0.0, 0.0))[1], mate=h.get("mate", ""),
                              baseBone=h.get("base", ""), raiseOf=h.get("raise_of", ""),
                              hang=h.get("side", "") if h["drive"] == "hang" else "")
-                        for n, h in hum_helpers.HELPERS.items() if h["drive"] not in ("spring", "ring")],
+                        for n, h in hum_helpers.HELPERS.items() if h["drive"] not in ("spring", "ring", "wing")],
                # spring chains, simulated by HumanSpringChain
                springs=[dict(bones=list(hum_helpers.CAPE))],
+               # the wings' chains (root, elbow, wrist; hand tip = the last one's tail), driven by HumanWings
+               wings=[dict(side=sd, bones=list(hum_helpers.WING[sd])) for sd in ("l", "r")],
                # the skirt ring, simulated by HumanSkirt: per column the hip link, the knee link, its tip, and
                # the left thigh's share (seated it follows the thighs)
                skirts=[dict(columns=[dict(hip=a, knee=k, hem=e,
@@ -292,6 +294,7 @@ def export_config():
         bone=hum_undead.BONE,                                              # the skeleton's colour group "Bone"
         horn=hum_cloth.hum_ghoul.HORN,                                     # the ghoul's claws, colour group "Horn"
         stone=hum_cloth.hum_elemental.STONE,                               # the earth elemental, colour group "Stone"
+        feather=hum_cloth.hum_wings.FEATHER,                               # the angels' wings, colour group "Feather"
         shader=dict(shadeMax=hum_paint.SHADE_MAX, blushTint=list(hum_material.BLUSH_TINT[:3]),
                     freckleTint=list(hum_material.FRECKLE_TINT[:3]), lipFromTone=list(hum_material.LIP_FROM_TONE),
                     edgeDark=hum_material.EDGE_DARK),

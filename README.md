@@ -764,12 +764,25 @@ Card-game units (Daniel: "Keep moving on the creatures / humanoids"), presets li
 - **Imp** (the Slim build, scale ~0.55 in Unity): red to violet, huge ears, a pinched grinning face, horns, bald, wings.
 - **Angel** (the Slim build): serene, fair or golden, gold or pale hair, no beard, ageless; wears `AngelWings`; a white
   robe with gold trim.
-- **Wings** (`hum_wings.WINGS`, slot `wings`, `Human_Cloth_Wings.fbx`): rigid on spine_03, half raised behind the shoulders
-  (up, out and back, clear of the arms), sized from the build's torso; an arm (root over the shoulder blade -> elbow ->
-  wrist above the head). **DemonWings** (Orc + Slim builds, material `leather`, group Blackened): four finger spars from
-  the wrist, a scalloped membrane between them down the back to the waist, a thumb claw; 388 / 292 / 236 tris.
-  **AngelWings** (Slim + Strong builds, material `bone`, group Bone): a hand, 9 primaries, 10 secondaries, 4 tertials and
-  two rows of coverts as flat tapered blades in layers (narrow ones read as a comb: widened); 696 / 420 / 252 tris.
-  **They don't move**: a twisting attack swings them with the chest. Flapping needs wing bones (helpers off spine_03,
-  driven at runtime like the cape chain) - not built.
-- Checks: `Tools > Game > Checks > Demon / Imp / Angel Lineup` -> `Logs/Ghoul/{demon,imp,angel}_*.png`.
+- **Wings** (`hum_wings.WINGS`, slot `wings`, `Human_Cloth_Wings.fbx`): half raised behind the shoulders (up, out and
+  back, clear of the arms), sized from the build's torso; an arm (root over the shoulder blade -> elbow -> wrist above
+  the head). **DemonWings** (Orc + Slim builds, material `leather`, group Blackened): four finger spars from the wrist, a
+  scalloped membrane between them down the back to the waist, a thumb claw; 388 / 292 / 236 tris.
+  **AngelWings** (Slim + Strong builds, material `feather`, group Feather = whites and dove greys): a hand, 9 primaries,
+  10 secondaries, 4 tertials and two rows of coverts as flat tapered blades in layers (narrow ones read as a comb:
+  widened); 696 / 420 / 252 tris. Each blade carries one whole `T_Cloth_Feather` (`hum_wings.feather_texture`: u across
+  the vane, v root to tip; a light shaft, barbs slanting to the tip with a few splits, darker edges, a downy root) on
+  `M_HumanFeather` (Humans/Cloth, no triplanar, never torn); `hum_ghoul.make_object` takes an optional per-vertex UV per
+  part for this.
+- **Wing bones** (`hum_helpers.WING`): three helpers a side, `xh_wing_<l|r>_0..2` (root over the shoulder blade, elbow,
+  wrist), chained off spine_03 (drive `wing`: not posed by HumanHelperBones). The wings are skinned to them: the arm
+  tubes blend across the joints (+-15%), the demon's fingers ride the hand bone and its membrane blends hand -> arm ->
+  spine_03 (the last scallop half on the spine, the foot on it), the angel's feathers are rigid on their root's bone.
+  The rig json lists them as `wings` (left, right); `HumanSetup.AddWings` fills a **`HumanWings`** component (disabled;
+  `HumanFace` enables it when a worn garment's slot is `wings`).
+- **`HumanWings`** (runs after the Animator, order 150): from the rest pose each frame, a slow breath (3 deg) plus a
+  beat (`flap` 0..1: `beatRate` 1.5 Hz, `beatAngle` 36 deg, the elbow and wrist lagging the root), or `fold` 0..1 (swept
+  back and down along the body). Game code sets `flap` (flying, a leap) and `fold` (indoors, sneaking); 0/0 is the
+  raised rest pose. Body FBX now 102 bones; the Humanoid avatar is unaffected (helpers aren't mapped).
+- Checks: `Tools > Game > Checks > Demon / Imp / Angel Lineup` -> `Logs/Ghoul/{demon,imp,angel}_*.png`; `Wings Beat` ->
+  `Logs/Ghoul/wings_{demon,angel}_*.png` (a beat cycle and the fold, posed with `HumanWings.Pose`).

@@ -160,14 +160,16 @@ def make_object(scene, name, parts, arm, sk, lod=0, material=None, slot="claws")
     import hum_lod
     import hum_rig
     import hum_skeleton
-    verts, faces, bones, ts = [], [], [], []
+    verts, faces, bones, ts, uvs = [], [], [], [], []
     off = 0
-    for V, F, bone, tv in parts:
+    for part in parts:                               # (V, F, bone, t[, uv per vertex]: hum_wings' feathers)
+        V, F, bone, tv = part[:4]
+        uvs.append(part[4] if len(part) > 4 else np.full((len(V), 2), 0.5))
         if hum_skeleton._signed_volume(V, F) < 0:
             F = [tuple(reversed(f)) for f in F]
         verts.append(V)
         faces.extend(tuple(i + off for i in f) for f in F)
-        bones.extend([bone] * len(V))
+        bones.extend([bone] * len(V) if isinstance(bone, str) else list(bone))
         ts.append(tv)
         off += len(V)
     V = np.vstack(verts)
@@ -177,7 +179,9 @@ def make_object(scene, name, parts, arm, sk, lod=0, material=None, slot="claws")
     for p in me.polygons:
         p.use_smooth = True
     uv = me.uv_layers.new(name="UVMap")
-    uv.data.foreach_set("uv", np.full(len(me.loops) * 2, 0.5, np.float32))
+    lv = np.zeros(len(me.loops), np.int64)
+    me.loops.foreach_get("vertex_index", lv)
+    uv.data.foreach_set("uv", np.vstack(uvs)[lv].astype(np.float32).ravel())
     reg = me.uv_layers.new(name="Region")
     reg.data.foreach_set("uv", np.zeros(len(me.loops) * 2, np.float32))
     C.write_rest_uv(me, V)
@@ -195,7 +199,12 @@ def make_object(scene, name, parts, arm, sk, lod=0, material=None, slot="claws")
     ob.data.materials.append(material or hum_skeleton.bone_material())
     ob["hum_slot"] = slot
     W = np.zeros((len(V), len(sk.bones)))
-    W[np.arange(len(V)), [sk.index[b] for b in bones]] = 1.0
+    for i, b in enumerate(bones):                    # a bone name (rigid) or {bone: weight} (hum_wings' chains)
+        if isinstance(b, str):
+            W[i, sk.index[b]] = 1.0
+        else:
+            for name, w in b.items():
+                W[i, sk.index[name]] += w
     hum_rig.skin(ob, arm, sk, W)
     return ob
 

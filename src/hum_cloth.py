@@ -851,9 +851,13 @@ def garment_material(kind):
     shared by every garment."""
     import hum_material
     name = {"leather": "M_HumanLeather", "quilt": "M_HumanQuilt", "mail": "M_HumanMail",
-            "plate": "M_HumanPlate", "fur": "M_HumanFur"}.get(kind, "M_HumanCloth")
+            "plate": "M_HumanPlate", "fur": "M_HumanFur", "feather": "M_HumanFeather"}.get(kind, "M_HumanCloth")
     if name in bpy.data.materials:
         return bpy.data.materials[name]
+    if kind == "feather":                                 # the angels' wings: one feather per blade (hum_wings)
+        import hum_wings
+        tex = bpy.data.images.get("T_Cloth_Feather") or hum_wings.feather_texture()
+        return hum_material.cloth_material(tex, name, roughness=0.8)
     if kind == "fur":                                     # the orcs' mantles: tufted strands (hum_paint.fur_texture)
         tex = bpy.data.images.get("T_Cloth_Fur") or hum_paint.fur_texture()
         return hum_material.cloth_material(tex, name, roughness=0.95)
