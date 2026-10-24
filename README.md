@@ -757,6 +757,19 @@ Card-game units (Daniel: "Keep moving on the creatures / humanoids"), presets li
   under the skirt's top (ending at the hips left a ring of shirt showing). ~4,200 tris. **ElvenCape** (slot `cloak`):
   the Cloak's cape (`hum_cloak._cloak(hem=, leaves=)`: same hull, skinning and Unity spring chain) to the knee, its hem
   9 leaves 8 cm deep, no hood (the ears). 2,540 tris. Random outfits never pick them (they are named garments).
+- **Dwarf** (2026-10-24, Daniel: "no fantasy pack is done if it does not have dwarves"; its own **Dwarf** build,
+  M/F, BUILD_ODDS 0): stocky - broad square shoulders over a deep barrel chest and a little belly, a short thick neck,
+  heavy arms with big hands, short sturdy legs (the imps' ShortLegs key at 0.9 plus LegLength); about 1.25-1.35 m
+  with the preset's short height; the head a little big (`head_scale` 1.06-1.14). Face: a big broad nose, heavy brow
+  over deep-set eyes, square face and jaw, ruddy weathered skin, bushy brows; hair Long, Bun, Crop, Ponytail or bald.
+  The men wear the new **Dwarf beard** (`hum_styles.BEARD["Dwarf"]`: the Wizard's long beard made a broad spade to
+  mid-chest, so it reads from above; 29k / 2.6k / 350 tris like the other beards' LODs; built with
+  `hum_orcs.build_tusks(style="Dwarf")`), in the hair's colour: new preset options `beard_masc_only` and
+  `beard_from_hair` (C# `beardMascOnly`, `beardFromHair`). My call: the women unbearded, so they read as women from
+  the game camera (one flag to change). The whole wardrobe (74 garments: clothes, leather, padded and mail, every plate
+  set, robes, cloaks, orc gear, rags) is built for MDwarf / FDwarf, so a dwarf wears anything a person does; the
+  checks dress the men in a gambeson under a hauberk with plate pauldrons, gauntlets and helm (a Hauberk or Gambeson
+  takes no Belt or Shirt: they exclude them).
 - **Giant** (the Orc build: every orc garment fits): human, weathered skin, heavy brow and jaw, small deep eyes, broad
   nose, shaggy hair, the man's rolled beard; dressed in the orcs' hide (OrcKilt, OrcMantle, Bracers). Its size is a scale
   in Unity (the build is a person's): ~2.6 = a 4.5 m hill giant.
@@ -767,8 +780,8 @@ Card-game units (Daniel: "Keep moving on the creatures / humanoids"), presets li
   between the chest plates (the preset's glow: magma, amber, moss green, crystal blue). It hides the body and head. Each
   rock rigid on one bone. 4,272 / 1,152 / 1,040 triangles. `Human_Cloth_Elemental.fbx` (its own family). Scale ~1.25 in
   Unity. The first stone (#77705f) read near-black over dark ground.
-- Checks: MedievalSetting `Tools > Game > Checks > Elf / Giant / Earth Elemental Lineup` (`GhoulCheck.Preset`: any preset
-  on a build, dressed and scaled) -> `Logs/Ghoul/{elf,giant,earth}_*.png`.
+- Checks: MedievalSetting `Tools > Game > Checks > Elf / Giant / Earth Elemental / Dwarf Lineup` (`GhoulCheck.Preset`:
+  any preset on a build, dressed and scaled) -> `Logs/Ghoul/{elf,giant,earth,dwarf}_*.png`.
 
 ### Demons, imps, angels and their wings (`src/hum_races.py`, `src/hum_wings.py`, 2026-10-23)
 

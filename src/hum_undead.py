@@ -747,7 +747,8 @@ def export(p):
              tatterCut=bool(p.get("tatter_cut", False)), milkMin=p.get("milk", (0, 0))[0],
              milkMax=p.get("milk", (0, 0))[1], wear=list(p.get("wear", [])), glow=list(p.get("glow", [])),
              noBeard=bool(p.get("no_beard", False)), ageMin=p.get("age", (0, 0))[0], ageMax=p.get("age", (0, 0))[1],
-             headScaleMin=p.get("head_scale", (0, 0))[0], headScaleMax=p.get("head_scale", (0, 0))[1])
+             headScaleMin=p.get("head_scale", (0, 0))[0], headScaleMax=p.get("head_scale", (0, 0))[1],
+             beardMascOnly=bool(p.get("beard_masc_only", False)), beardFromHair=bool(p.get("beard_from_hair", False)))
     if not p.get("beard"):
         d["beard"] = ""
     return d
@@ -792,10 +793,12 @@ def undead_face(seed, preset=ZOMBIE, outfit=True):
         f["style"] = rng.choice(preset["hair_styles"]) or None
     if preset["brows"]:
         f["brow_style"] = rng.choice(preset["brows"])
-    if preset.get("beard"):
+    if preset.get("beard") and (masc or not preset.get("beard_masc_only")):
         f["beard"] = preset["beard"]
         if preset.get("beard_color"):
             f["beard_colors"] = dict(root=srgb(preset["beard_color"]))
+        elif preset.get("beard_from_hair") and f.get("hair_colors"):      # the dwarves: the beard in the hair's colour
+            f["beard_colors"] = dict(f["hair_colors"])
     if preset.get("no_beard"):
         f["beard"] = None
         p["beard_shadow"] = 0.0

@@ -38,6 +38,10 @@ BEARD = {
     "Wizard": dict(cap=0.005, spacing=0.011, length=(0.02, 0.03), chin_extra=0.15, chin_r=0.04,
                    converge=1.8, lift=0.02, width=0.024, thick=0.007, gravity=1.0, cheeks=0.8, hug=0.003,
                    steps=12, sideburns=True),
+    # the dwarves' (2026-10-24): the Wizard's long beard made broad - a spade to the chest that reads from above
+    "Dwarf": dict(cap=0.006, spacing=0.010, length=(0.025, 0.035), chin_extra=0.2, chin_r=0.075,
+                  converge=0.4, lift=0.025, width=0.028, thick=0.008, gravity=1.0, cheeks=0.9, hug=0.003,
+                  steps=14, sideburns=True),
     "Goatee": dict(cap=0.003, spacing=0.010, length=(0.014, 0.02), chin_extra=0.035, chin_r=0.022,
                    converge=2.0, lift=0.0, width=0.018, thick=0.005, gravity=0.8, chin_only=True, hug=0.003),
     "ChinStrap": dict(cap=0.0035, cheeks=0.3, no_mustache=True, sideburns=True, jaw_band=0.02),

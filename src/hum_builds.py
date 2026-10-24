@@ -23,7 +23,7 @@ import hum_faces as F
 import hum_paint
 import hum_rig
 
-BUILD_NAMES = ["Slim", "Strong", "Heavy", "Orc", "Undead", "Ghoul", "Imp"]
+BUILD_NAMES = ["Slim", "Strong", "Heavy", "Orc", "Undead", "Ghoul", "Imp", "Dwarf"]
 BODY_KEYS = ({"Masculine", "Feminine", "Heavy", "Thin", "Muscular", "Slight"}
              | {f"{s}_{d}" for s in F.BODY_SLIDERS + ["NeckWidth"] for d in ("Pos", "Neg")})
 
@@ -90,6 +90,19 @@ _SHAPE = {
                        LegMuscle_Neg=0.5, ShoulderMuscle_Neg=0.5, UpperArmSize_Neg=0.4, Belly_Pos=0.6, Ribs_Pos=0.3,
                        Bony_Pos=0.3, Hunch_Pos=0.5, NeckLength_Neg=0.7, NeckThick_Neg=0.2, NeckForward_Pos=0.35,
                        LegLength_Neg=0.5, ShortLegs_Pos=0.95, LongArms_Pos=0.7, HandSize_Pos=0.6, Claws_Pos=0.45),
+    # 2026-10-24: the dwarves' (hum_races DWARF; BUILD_ODDS 0; Daniel: "no fantasy pack is done if it does not have
+    # dwarves"): stocky - broad square shoulders over a deep barrel chest and a little belly, a short thick neck, heavy
+    # arms with big hands, and short sturdy legs (the imps' ShortLegs key); the slightly big head is the preset's
+    ("M", "Dwarf"): dict(Muscular=0.9, Heavy=0.35, ShoulderWidth_Pos=1.0, ChestWide_Pos=0.8, TorsoDepth_Pos=0.7,
+                         ChestMuscle_Pos=0.5, BackMuscle_Pos=0.6, Belly_Pos=0.3, Traps_Pos=0.6, NeckWidth_Pos=0.7,
+                         NeckThick_Pos=0.8, NeckLength_Neg=0.8, ArmMuscle_Pos=0.8, ShoulderMuscle_Pos=0.7,
+                         UpperArmSize_Pos=0.6, ForearmSize_Pos=0.8, ArmBulk_Pos=0.6, HandSize_Pos=0.8,
+                         LegMuscle_Pos=0.6, LegLength_Neg=0.5, ShortLegs_Pos=0.9),
+    ("F", "Dwarf"): dict(Muscular=0.7, Heavy=0.3, ShoulderWidth_Neg=0.0, ShoulderWidth_Pos=0.6, ChestWide_Pos=0.5,
+                         TorsoDepth_Pos=0.5, Hips_Pos=0.4, Waist_Neg=0.0, Bust_Pos=0.3, Belly_Pos=0.2,
+                         NeckWidth_Pos=0.4, NeckThick_Pos=0.5, NeckLength_Neg=0.6, ArmMuscle_Pos=0.6,
+                         ShoulderMuscle_Pos=0.5, UpperArmSize_Pos=0.4, ForearmSize_Pos=0.6, HandSize_Pos=0.6,
+                         LegMuscle_Pos=0.5, LegLength_Neg=0.4, ShortLegs_Pos=0.85),
 }
 BUILDS = {}
 for _sex in "MF":
@@ -97,7 +110,8 @@ for _sex in "MF":
         _k = dict(_BASE[_sex])
         _k.update(_SHAPE[(_sex, _name)])
         BUILDS[_sex + _name] = dict(sex=_sex, name=_name, keys={k: v for k, v in _k.items() if v > 0})
-BUILD_ODDS = {"Slim": 0.4, "Strong": 0.3, "Heavy": 0.3, "Orc": 0.0, "Undead": 0.0, "Ghoul": 0.0, "Imp": 0.0}
+BUILD_ODDS = {"Slim": 0.4, "Strong": 0.3, "Heavy": 0.3, "Orc": 0.0, "Undead": 0.0, "Ghoul": 0.0, "Imp": 0.0,
+              "Dwarf": 0.0}
 
 
 def tag_of(masc, name):

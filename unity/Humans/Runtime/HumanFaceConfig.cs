@@ -168,6 +168,7 @@ namespace Humans
             public bool noBeard;
             public float ageMin, ageMax;
             public float headScaleMin, headScaleMax;
+            public bool beardMascOnly, beardFromHair;                  // the dwarves: the men's beard, in the hair's colour
             public float heightMin, heightMax, sexMin, blushMin, blushMax;
             public float[] lipFromTone, woundChance;
             public float rotMin, rotMax, tatterMin, tatterMax, milkMin, milkMax;

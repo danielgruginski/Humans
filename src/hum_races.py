@@ -56,6 +56,33 @@ GIANT = dict(
                 F=["RagShirt:#6a5a44", "OrcKilt:#5a4430", "OrcMantle:#6b5a44"]),   # Blender preview only
 )
 
+DWARF = dict(
+    # 2026-10-24 (Daniel: "no fantasy pack is done if it does not have dwarves"): short and stocky (the Dwarf build, the
+    # head a little big), a big broad nose, heavy brow over deep-set eyes, a square face, ruddy weathered skin; the men's
+    # long broad Dwarf beard in the hair's colour (my call: the women unbearded, so they read as women from above)
+    name="Dwarf",
+    sliders={"NoseWidth": (0.7, 0.2), "NoseLength": (0.35, 0.2), "NoseTipWidth": (0.7, 0.2), "NoseFlare": (0.5, 0.2),
+             "NoseHump": (0.25, 0.3), "BrowHeavy": (0.8, 0.1), "BrowRidge": (0.6, 0.15), "EyeSunken": (0.3, 0.1),
+             "EyeSize": (-0.2, 0.15), "CheekFull": (0.4, 0.2), "FaceSquare": (0.5, 0.2), "JawWide": (0.6, 0.15),
+             "ChinWidth": (0.4, 0.15), "HeadWidth": (0.3, 0.1), "EarSize": (0.2, 0.15), "MouthWidth": (0.2, 0.15)},
+    build="Dwarf",
+    head_scale=(1.06, 1.14),
+    fem_scale=0.7,
+    tones=["#d9a582", "#c99070", "#e0b08f", "#b8805e", "#c48a68", "#a87656"],   # ruddy, weathered
+    irises=["#4a2a14", "#6a4c26", "#6f7d86", "#4e6e8a", "#3e5e3a"],
+    hair_styles=["Long", "Long", "Bun", "Crop", "Ponytail", ""],
+    hair_colors=["red", "auburn", "brown", "dark_brown", "black", "blond", "grey", "white"],
+    beard="Dwarf", beard_color="", beard_masc_only=True, beard_from_hair=True,
+    brows=["Bushy"],
+    height=(-0.9, -0.5),
+    sex_min=0.0,
+    blush=(0.25, 0.5),
+    age=(0.3, 0.7),
+    outfit=dict(M=["Gambeson:#5a4a3a", "Trousers:#5a4632", "Boots:#3a2a1a", "Hauberk:#8a8a8a", "PlatePauldrons:#9a9a9e",
+                   "PlateHelm:#9a9a9e"],                  # preview (a Hauberk or a Gambeson takes no Belt or Shirt)
+                F=["Gambeson:#6b5a48", "Trousers:#5a4632", "Boots:#3a2a1a", "Bracers:#4a3420"]),
+)
+
 EARTH_ELEMENTAL = dict(
     name="EarthElemental",
     sliders={},
@@ -144,7 +171,7 @@ ANGEL = dict(
                 F=["Trousers:#e8e2d4", "Robe:#ece6da", "RobeTrim:#c9a03a", "Shoes:#c9b89a"]),   # Blender preview only
 )
 
-PRESETS = [ELF, GIANT, EARTH_ELEMENTAL, DEMON, IMP, ANGEL]
+PRESETS = [ELF, GIANT, EARTH_ELEMENTAL, DEMON, IMP, ANGEL, DWARF]
 
 
 def build_horns():

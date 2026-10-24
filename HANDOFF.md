@@ -629,3 +629,12 @@ Done: head + eyes, stylisation, UVs, paint masks, preview shader, 98 keys, rando
   309/900 frames pierced, up to 13 cm; 45/45/25: 3; 40/40/20: 1, a thumb at 0.7 cm), renders of the worst hands with
   and without in MedievalSetting `Logs/Ghoul/claw_*.png`. Installed, Rebuild Prefab Only; on for the ghoul, off for
   the elf and the lich.
+- 2026-10-24 (Daniel: "no fantasy pack is done if it does not have dwarves"): **dwarves** (README "More peoples" >
+  Dwarf). The Dwarf build (body keys incl. ShortLegs), `hum_races.DWARF`, the Dwarf beard, preset options
+  `beard_masc_only` / `beard_from_hair` (Python undead_face + C# ApplyPreset), the whole wardrobe built for MDwarf and
+  FDwarf in batches of ~20 garments (each batch ~70-135 s in the live Blender; a single call for all 74 would be ~10
+  min). Exported every cloth family, Human_Hair.fbx and the config (body and rig unchanged: no new key); installed,
+  Rebuild Prefab Only; MedievalSetting `Dwarf Lineup` and a dwarf pair in Creatures_Test. Gotcha: my first check
+  outfit put a Belt and a Shirt with the Hauberk / Gambeson, and HumanActor.Dress dropped the mail (Excludes). Open:
+  the women's beards are my call (off); no dwarven garments of their own yet (the human gear fits); nothing in the
+  game spawns dwarves.

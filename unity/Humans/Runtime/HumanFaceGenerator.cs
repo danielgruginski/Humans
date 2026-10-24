@@ -173,10 +173,10 @@ namespace Humans
             }
             if (p.hairStyles != null && p.hairStyles.Length > 0) f.hairStyle = p.hairStyles[rng.Int(p.hairStyles.Length)] ?? "";
             if (p.brows != null && p.brows.Length > 0) f.browStyle = p.brows[rng.Int(p.brows.Length)];
-            if (!string.IsNullOrEmpty(p.beard))
+            if (!string.IsNullOrEmpty(p.beard) && (!p.beardMascOnly || f.sex > 0f))
             {
                 f.beardStyle = p.beard;
-                f.beardColor = HumanFaceConfig.Hex(p.beardColor);
+                f.beardColor = p.beardFromHair ? f.hairRoot : HumanFaceConfig.Hex(p.beardColor);
                 f.beardShadow = 0f;
             }
             if (p.noBeard)
