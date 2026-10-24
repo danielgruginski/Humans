@@ -613,3 +613,13 @@ Done: head + eyes, stylisation, UVs, paint masks, preview shader, 98 keys, rando
   Human_Body.fbx, Human_Cloth_Wings.fbx, rig + config; installed, Rebuild Prefab Only; no clip import warnings after the
   bone count change; checked with `Wings Beat` + `Angel Lineup`. Open: nothing in the game sets `flap`/`fold` yet (no
   flying creature AI); from the front the wings show their shaded undersides (greyer).
+- 2026-10-23 (night, Daniel: "Do the number 4" - my list of rough edges): **the imp's own proportions and the elves'
+  clothes** (README "Demons, imps, angels and their wings" > Imp, "More peoples" > Elven clothes). Imp: an Imp build
+  (MImp/FImp, BUILD_ODDS 0) from body keys plus a new one, ShortLegs (added in place with `add_keys` +
+  `propagate_keys`), and a preset head scale on the head bone (C# HumanFaceData.headScale, Preset headScaleMin/Max,
+  HumanFace.ApplySkeleton); DemonWings + RagTrousers built for it. Elves: `hum_elven` ElvenTunic + ElvenCape (leaf
+  hems), `_cloak` got `hem` and `leaves`. Exported Human_Body.fbx (the key), Human_Cloth_Wings/Rags/Elven.fbx, rig,
+  config; installed, Rebuild Prefab Only; Imp + Elf lineups checked (GhoulCheck now grounds characters and logs it).
+  Gotcha: a deform that lowers the body must keep `joint-ground` still - `full_coords` re-grounds by it after every
+  deform, which first undid the drop (feet 18.8 cm up, pelvis unmoved). Open: the imp's face is still the human head
+  with sliders (no grin of its own); nothing in the game spawns imps or elves yet.

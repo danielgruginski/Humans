@@ -737,8 +737,16 @@ Card-game units (Daniel: "Keep moving on the creatures / humanoids"), presets li
   chin and nose, finer lips (Lipless 0.45: the head's own pout), fair to dusky skin, no beard, hair that leaves the ears
   out (Ponytail, Swept, Bun - Long covered them), tall. **Ageless:** a new preset range `age` (C# `ageMin` / `ageMax`,
   drawn last in ApplyPreset so the other presets roll as before) - rolled ages made some elves old; under 0.12 the Young
-  key made them childlike, so 0.12-0.3. Dress: shirt, leggings, the leather coat in forest greens, boots, a cloak
-  *without* its hood ("-CloakHood": the hood hides the ears).
+  key made them childlike, so 0.12-0.3. Dress: shirt, leggings, boots and the **elven clothes** below (before them:
+  the leather coat in forest greens and a cloak without its hood).
+- **Elven clothes** (`src/hum_elven.py`, 2026-10-23, Daniel: "Do the number 4"; family `Human_Cloth_Elven.fbx`, the
+  Slim, Strong and Heavy builds): the hems cut into leaves, which is what reads from the top-down camera.
+  **ElvenTunic** (slot `outer`): fitted, long sleeves widening to the wrist, a skirt from the hips to the knee split up
+  both sides (60 %), its hem 16 leaf-shaped tabs (`leaf_edge`: full sides, a pointed tip; the notches 7 cm higher, at
+  the front, the sides and the back), cut by drawing the skirt's columns up (`hum_rags._tear_hem`); the torso runs 4 cm
+  under the skirt's top (ending at the hips left a ring of shirt showing). ~4,200 tris. **ElvenCape** (slot `cloak`):
+  the Cloak's cape (`hum_cloak._cloak(hem=, leaves=)`: same hull, skinning and Unity spring chain) to the knee, its hem
+  9 leaves 8 cm deep, no hood (the ears). 2,540 tris. Random outfits never pick them (they are named garments).
 - **Giant** (the Orc build: every orc garment fits): human, weathered skin, heavy brow and jaw, small deep eyes, broad
   nose, shaggy hair, the man's rolled beard; dressed in the orcs' hide (OrcKilt, OrcMantle, Bracers). Its size is a scale
   in Unity (the build is a person's): ~2.6 = a 4.5 m hill giant.
@@ -761,7 +769,14 @@ Card-game units (Daniel: "Keep moving on the creatures / humanoids"), presets li
   vampire - deprecated").
 - **Demon** (the Orc build): deep red (one charcoal) skin, burning yellow eyes, horns, pointed ears, heavy scowling brow;
   wears `DemonWings`. Dress it in the orcs' kilt, spiked pauldrons and bracers (blackened).
-- **Imp** (the Slim build, scale ~0.55 in Unity): red to violet, huge ears, a pinched grinning face, horns, bald, wings.
+- **Imp** (its own **Imp** build, scale ~0.55 in Unity): red to violet, huge ears, a pinched grinning face, horns, bald,
+  wings. The build (2026-10-23, Daniel: "Do the number 4" - it was a scaled Slim body): short legs (a new body key
+  **ShortLegs**, `hum_undead._deform_short_legs`: thigh -10 cm, calf -9 cm, everything above lowered so the feet stay
+  on the floor - its joint deltas drop the pelvis 18.8 cm; it keeps the `joint-ground` helper still, since
+  `full_coords` re-grounds by it), long thin arms with big clawed hands, a pot belly under a narrow ribbed chest, a
+  short neck and a hunch. **The big head** is not a key: the preset's `head_scale` (1.28-1.4; C# `headScaleMin/Max`,
+  `HumanFaceData.headScale`) scales the head bone in `HumanFace.ApplySkeleton`, so hair, horns, eyes and headgear follow
+  (a Humanoid clip never writes bone scale). Its garments: `DemonWings` and `RagTrousers` (built for MImp/FImp only).
 - **Angel** (the Slim build): serene, fair or golden, gold or pale hair, no beard, ageless; wears `AngelWings`; a white
   robe with gold trim.
 - **Wings** (`hum_wings.WINGS`, slot `wings`, `Human_Cloth_Wings.fbx`): half raised behind the shoulders (up, out and
@@ -784,5 +799,7 @@ Card-game units (Daniel: "Keep moving on the creatures / humanoids"), presets li
   beat (`flap` 0..1: `beatRate` 1.5 Hz, `beatAngle` 36 deg, the elbow and wrist lagging the root), or `fold` 0..1 (swept
   back and down along the body). Game code sets `flap` (flying, a leap) and `fold` (indoors, sneaking); 0/0 is the
   raised rest pose. Body FBX now 102 bones; the Humanoid avatar is unaffected (helpers aren't mapped).
-- Checks: `Tools > Game > Checks > Demon / Imp / Angel Lineup` -> `Logs/Ghoul/{demon,imp,angel}_*.png`; `Wings Beat` ->
+- Checks: `Tools > Game > Checks > Demon / Imp / Angel Lineup` -> `Logs/Ghoul/{demon,imp,angel}_*.png` (the lineups
+  ground each character by its body's lowest vertex and log the move; out of play mode HumanFace doesn't lower the
+  model by the pelvis delta); `Wings Beat` ->
   `Logs/Ghoul/wings_{demon,angel}_*.png` (a beat cycle and the fold, posed with `HumanWings.Pose`).

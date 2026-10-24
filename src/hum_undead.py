@@ -286,6 +286,24 @@ def _deform_long_arms(C, rig, sk, upper=0.025, fore=0.04):
     return _stretch(C, sk, ext)
 
 
+def _deform_short_legs(C, rig, sk, thigh=0.10, calf=0.09):
+    """Shorter legs (the imps): the thigh by `thigh`, the calf by `calf` (metres, evenly along each), then everything
+    lowered by how far the ankles rose, so the feet stay on the floor and the pelvis carries the drop (Unity lowers
+    the model by the hips' delta)."""
+    ext = {}
+    for side in ("l", "r"):
+        ext["thigh_" + side] = -thigh
+        ext["calf_" + side] = -calf
+    rise = np.mean([sk.ends(_stretch(C, sk, ext))[0][sk.index["foot_" + s], 2] - sk.ends(C)[0][sk.index["foot_" + s], 2]
+                    for s in ("l", "r")])
+    ground = rig.groups["joint-ground"]                        # full_coords re-grounds by this helper: it stays put
+    keep = C[ground].copy()
+    C = _stretch(C, sk, ext)
+    C[:, 2] -= rise
+    C[ground] = keep
+    return C
+
+
 def _deform_arch(C, rig, sk, shrug=0.022, fwd=0.012, head_fwd=0.03, head_drop=0.012, hump=0.028, blade=0.011):
     """More than the Hunch, for a back the runtime bend arches: the shoulders hunched up and forward (bone offsets,
     like Hunch), the head carried further forward, a broad hump from mid-back to the neck and the shoulder blades
@@ -343,7 +361,8 @@ def _deform_lipless(C, rig, sk, ahead=0.0025, reach=0.004):
 
 DEFORMS = {"hunch": _deform_hunch, "ribs": _deform_ribs, "sunken": _deform_sunken, "bony": _deform_bony,
            "eye_sunken": _deform_eye_sunken, "gaunt": _deform_gaunt,
-           "claws": _deform_claws, "long_arms": _deform_long_arms, "arch": _deform_arch, "lipless": _deform_lipless}
+           "claws": _deform_claws, "long_arms": _deform_long_arms, "arch": _deform_arch, "lipless": _deform_lipless,
+           "short_legs": _deform_short_legs}
 
 
 # ------------------------------------------------------------------ rot (painted: T_Head_Rot, T_Body_Rot)
@@ -727,7 +746,8 @@ def export(p):
              tatterMin=p.get("tatter", (0, 0))[0], tatterMax=p.get("tatter", (0, 0))[1],
              tatterCut=bool(p.get("tatter_cut", False)), milkMin=p.get("milk", (0, 0))[0],
              milkMax=p.get("milk", (0, 0))[1], wear=list(p.get("wear", [])), glow=list(p.get("glow", [])),
-             noBeard=bool(p.get("no_beard", False)), ageMin=p.get("age", (0, 0))[0], ageMax=p.get("age", (0, 0))[1])
+             noBeard=bool(p.get("no_beard", False)), ageMin=p.get("age", (0, 0))[0], ageMax=p.get("age", (0, 0))[1],
+             headScaleMin=p.get("head_scale", (0, 0))[0], headScaleMax=p.get("head_scale", (0, 0))[1])
     if not p.get("beard"):
         d["beard"] = ""
     return d

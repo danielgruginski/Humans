@@ -70,6 +70,9 @@ def cloth_family(garment):
     import hum_wings
     if garment in hum_wings.WINGS:                     # demons', imps' and angels' wings (2026-10-23)
         return "Wings"
+    import hum_elven
+    if garment in hum_elven.ELVEN:                     # the elves' leaf-hemmed tunic and cape (2026-10-23)
+        return "Elven"
     if garment in hum_cloak.CLOAK:
         return "Cloak"
     if garment in hum_robe.ROBE:
@@ -263,7 +266,7 @@ def export_config():
         garments=[dict(name=k, slot=g["slot"], layer=g["layer"], material=g["material"], hide=list(g["hide"]),
                        cover=list(hum_cloth.cover_of(k)),
                        # no cloak over pauldrons, gorgets or plate: it fits clothes (hum_cloak.bulky)
-                       excludes=list(g.get("excludes", [])) + (hum_cloak.cloak_excludes() if k in ("Cloak", "VampireCape") else []),
+                       excludes=list(g.get("excludes", [])) + (hum_cloak.cloak_excludes() if k in ("Cloak", "VampireCape", "ElvenCape") else []),
                        capCut=float(g.get("capcut", 0.0)), hidesHair=bool(g.get("hides_hair", False)),
                        hoodCut=bool(g.get("hoodcut", False)), group=g.get("group", ""),
                        hidesFaceHair=bool(g.get("hides_face_hair", False)),

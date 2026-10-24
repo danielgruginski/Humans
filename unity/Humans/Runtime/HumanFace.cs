@@ -294,6 +294,9 @@ namespace Humans
                 var rel = d[i] - (p >= 0 ? d[p] : Vector3.zero);
                 bones[i].localPosition = restLocal[i] + restToParent[i].MultiplyVector(rel);
             }
+            int head = Array.IndexOf(rig.bones, "head");                // the imps' big heads (a Humanoid clip never
+            if (head >= 0 && bones[head] != null)                       // writes bone scale)
+                bones[head].localScale = Vector3.one * (face.headScale > 0f ? face.headScale : 1f);
             if (modelRoot == null) return;
             float s = rig.HeightScale(face.height);
             modelRoot.localScale = Vector3.one * s;

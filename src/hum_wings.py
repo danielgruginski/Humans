@@ -222,7 +222,7 @@ FEATHER = ["#f4f1ea", "#ebe7dd", "#f7f5f0", "#e2ddd2", "#d9d6d0", "#eee8d8"]   #
 
 WINGS = {
     "DemonWings": dict(slot="wings", layer=0, material="leather", group="Blackened", make=_build(demon_parts, "leather"),
-                       builds=("Orc", "Slim"), hide=[], cover=[]),
+                       builds=("Orc", "Slim", "Imp"), hide=[], cover=[]),
     "AngelWings": dict(slot="wings", layer=0, material="feather", group="Feather", make=_build(angel_parts, "feather"),
                        builds=("Slim", "Strong"), hide=[], cover=[]),
 }

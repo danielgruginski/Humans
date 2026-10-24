@@ -106,16 +106,18 @@ SLIDERS = [
     ("LongArms", "@long_arms", None),
     ("Arch", "@arch", None),
     ("Lipless", "@lipless", None),                     # the lips shrunk back onto the teeth (face)
+    # 2026-10-23, the imp (its own Imp build; Daniel: "Do the number 4"): legs much shorter than LegLength's
+    ("ShortLegs", "@short_legs", None),
 ]
 BODY_SLIDERS = ["ArmMuscle", "ShoulderMuscle", "LegMuscle", "ChestMuscle", "BackMuscle", "VShape",
                 "ShoulderWidth", "Waist", "Hips", "Bust", "Belly",
                 "NeckThick", "NeckForward", "UpperArmSize", "ForearmSize", "HandSize", "TorsoDepth", "LegLength",
                 "NeckLength", "ChestWide", "Traps", "ArmsOut", "ArmBulk", "Hunch", "Ribs", "Sunken", "Bony",
-                "Claws", "LongArms", "Arch"]
+                "Claws", "LongArms", "Arch", "ShortLegs"]
 PRESET_ONLY = {"JawWide", "BrowHeavy", "Underbite", "EarLow", "NeckThick", "NeckForward", "UpperArmSize",
                "ForearmSize", "HandSize", "TorsoDepth", "LegLength", "NeckLength", "ChestWide", "Traps", "ArmsOut",
                "ArmBulk", "Hunch", "Ribs", "Sunken", "Bony", "EyeSunken", "Gaunt", "Claws", "LongArms", "Arch",
-               "Lipless"}
+               "Lipless", "ShortLegs"}
 MUSCLE_SLIDERS = ["ArmMuscle", "ShoulderMuscle", "LegMuscle", "ChestMuscle", "BackMuscle", "VShape"]
 
 # macro keys: name -> (macros, race)

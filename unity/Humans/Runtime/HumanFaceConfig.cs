@@ -156,7 +156,8 @@ namespace Humans
         /// the chance of each wound set, clouded eyes (milk), torn clothes (tatter; tatterCut: holes cut out), garments
         /// always worn (wear: the skeleton's bones, coloured from their group's palette) and the orbits' glow.
         /// noBeard: the rolled face's beard goes (the ghoul: hairless). ageMin/ageMax: the face's age is drawn from it
-        /// (0 young adult .. 1 old; ageMax 0 keeps the rolled age) - the elves' ageless faces.</summary>
+        /// (0 young adult .. 1 old; ageMax 0 keeps the rolled age) - the elves' ageless faces. headScaleMin/Max: the
+        /// head bone's scale (the imps' big heads; headScaleMax 0 = 1).</summary>
         [Serializable] public class Preset
         {
             public string name;
@@ -166,6 +167,7 @@ namespace Humans
             public string beard, beardColor, build;
             public bool noBeard;
             public float ageMin, ageMax;
+            public float headScaleMin, headScaleMax;
             public float heightMin, heightMax, sexMin, blushMin, blushMax;
             public float[] lipFromTone, woundChance;
             public float rotMin, rotMax, tatterMin, tatterMax, milkMin, milkMax;

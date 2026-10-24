@@ -23,7 +23,7 @@ import hum_faces as F
 import hum_paint
 import hum_rig
 
-BUILD_NAMES = ["Slim", "Strong", "Heavy", "Orc", "Undead", "Ghoul"]
+BUILD_NAMES = ["Slim", "Strong", "Heavy", "Orc", "Undead", "Ghoul", "Imp"]
 BODY_KEYS = ({"Masculine", "Feminine", "Heavy", "Thin", "Muscular", "Slight"}
              | {f"{s}_{d}" for s in F.BODY_SLIDERS + ["NeckWidth"] for d in ("Pos", "Neg")})
 
@@ -79,6 +79,17 @@ _SHAPE = {
                          NeckThick_Neg=0.6, NeckForward_Pos=0.9, NeckLength_Pos=0.3, UpperArmSize_Neg=0.5,
                          Hunch_Pos=0.9, Ribs_Pos=1.0, Sunken_Pos=0.9, Bony_Pos=1.0, Claws_Pos=1.0, LongArms_Pos=0.9,
                          Arch_Pos=0.9),
+    # 2026-10-23: the imps' (hum_races IMP; BUILD_ODDS 0; Daniel: "Do the number 4" - the imp was a scaled Slim body):
+    # short bowed legs, long thin arms with big clawed hands, a pot belly under a narrow ribbed chest, a short neck
+    # and a hunch; the big head is the preset's head scale (Unity: the head bone), not a key
+    ("M", "Imp"): dict(Thin=0.7, Slight=0.8, ShoulderWidth_Pos=0.0, ChestMuscle_Pos=0.0, ArmMuscle_Neg=0.7,
+                       LegMuscle_Neg=0.6, ShoulderMuscle_Neg=0.6, UpperArmSize_Neg=0.5, Belly_Pos=0.8, Ribs_Pos=0.4,
+                       Bony_Pos=0.3, Hunch_Pos=0.6, NeckLength_Neg=0.8, NeckThick_Neg=0.3, NeckForward_Pos=0.4,
+                       LegLength_Neg=0.6, ShortLegs_Pos=1.0, LongArms_Pos=0.8, HandSize_Pos=0.7, Claws_Pos=0.5),
+    ("F", "Imp"): dict(Thin=0.7, Slight=0.8, Hips_Pos=0.1, Waist_Neg=0.0, Bust_Pos=0.05, ArmMuscle_Neg=0.6,
+                       LegMuscle_Neg=0.5, ShoulderMuscle_Neg=0.5, UpperArmSize_Neg=0.4, Belly_Pos=0.6, Ribs_Pos=0.3,
+                       Bony_Pos=0.3, Hunch_Pos=0.5, NeckLength_Neg=0.7, NeckThick_Neg=0.2, NeckForward_Pos=0.35,
+                       LegLength_Neg=0.5, ShortLegs_Pos=0.95, LongArms_Pos=0.7, HandSize_Pos=0.6, Claws_Pos=0.45),
 }
 BUILDS = {}
 for _sex in "MF":
@@ -86,7 +97,7 @@ for _sex in "MF":
         _k = dict(_BASE[_sex])
         _k.update(_SHAPE[(_sex, _name)])
         BUILDS[_sex + _name] = dict(sex=_sex, name=_name, keys={k: v for k, v in _k.items() if v > 0})
-BUILD_ODDS = {"Slim": 0.4, "Strong": 0.3, "Heavy": 0.3, "Orc": 0.0, "Undead": 0.0, "Ghoul": 0.0}
+BUILD_ODDS = {"Slim": 0.4, "Strong": 0.3, "Heavy": 0.3, "Orc": 0.0, "Undead": 0.0, "Ghoul": 0.0, "Imp": 0.0}
 
 
 def tag_of(masc, name):
@@ -261,7 +272,7 @@ def build_wardrobe(scene, arm, sk, tags=None, names=None, log=print):
                 else:
                     ob, nk = hum_cloth.build_garment(scene, B, name, arm, sk, body)
                 to_rest(ob, bs.dJ, sk)                        # others read it back via build_coords
-                if name in ("Cloak", "KnightCape", "VampireCape"):   # capes: weights smoothed over the mesh
+                if name in ("Cloak", "KnightCape", "VampireCape", "ElvenCape"):   # capes: weights smoothed over the mesh
                     import hum_cloak
                     hum_cloak.reskin(ob, arm, sk)
                 ob.hide_set(True)

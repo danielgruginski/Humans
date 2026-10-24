@@ -153,13 +153,16 @@ def _vampire_cape(B):
 VAMP_COLLAR = dict(height=0.17, rings=6, flare=0.085, open_span=0.6 * math.pi)
 
 
-def _cloak(B, long=False, collar=None):
+def _cloak(B, long=False, collar=None, hem=None, leaves=None):
+    """hem: the hem's height (else mid-calf, or the ankle when long); leaves=(n, depth): the hem cut into n leaf-shaped
+    tabs across the cape (hum_elven.leaf_edge), the notches `depth` higher - the hanging rows of each column drawn up
+    along it, so the cut runs through the rows rather than in steps of whole faces (the ElvenCape)."""
     co = B.co
     shoulder = {s: B.j[f"upperarm_{s}"] for s in "lr"}
     z_neck = float(B.j["neck_01"][2])
     z_sh = float(max(shoulder["l"][2], shoulder["r"][2]))
     knee = float(B.j["calf_l"][2])
-    z_hem = knee - 0.16 if not long else float(B.j["foot_l"][2]) + 0.07
+    z_hem = hem if hem is not None else (knee - 0.16 if not long else float(B.j["foot_l"][2]) + 0.07)
     cy = float(B.j["spine_02"][1])
     # the arms as they hang when animated: vertical columns from the shoulder joints down to the hips
     arm_pts = []
@@ -218,11 +221,18 @@ def _cloak(B, long=False, collar=None):
     Zs = np.r_[Z[0] + 0.006, Z]
     Rs = np.vstack([R[0] - 0.006, R])
     THs = np.vstack([TH[0], TH])
-    V = np.array([(Rs[k, j] * math.sin(THs[k, j]), cy - Rs[k, j] * math.cos(THs[k, j]), Zs[k])
+    Zg = np.repeat(Zs[:, None], n, 1)                                     # per column: the leaves draw columns up
+    if leaves is not None:
+        import hum_elven
+        k0 = int(np.argmax(Zs <= z_sh - 0.15 + 1e-6))                     # the first hanging row
+        L = Zs[k0] - Zs[-1]
+        lift = leaves[1] - hum_elven.leaf_edge(np.arange(n) / (n - 1) * leaves[0], leaves[1])
+        Zg[k0:] = Zs[k0] + (Zs[k0:, None] - Zs[k0]) * (L - lift[None, :]) / L
+    V = np.array([(Rs[k, j] * math.sin(THs[k, j]), cy - Rs[k, j] * math.cos(THs[k, j]), Zg[k, j])
                   for k in range(len(Zs)) for j in range(n)])
     F = [((k + 1) * n + j, (k + 1) * n + j + 1, k * n + j + 1, k * n + j) for k in range(len(Zs) - 1) for j in range(n - 1)]
     F = A._outward(V, F, np.array([0.0, cy, float(np.mean(Z))]))
-    U = np.array([(th_unit[j] * float(R.mean()) * 2.2 / 0.25, (Z[0] - Zs[k]) / 0.25 - (0.0 if k else 0.006 / 0.25))
+    U = np.array([(th_unit[j] * float(R.mean()) * 2.2 / 0.25, (Z[0] - Zg[k, j]) / 0.25 - (0.0 if k else 0.006 / 0.25))
                   for k in range(len(Zs)) for j in range(n)])
     V, F = C.add_rim(V, F, 0.005, B)
     U = np.vstack([U, np.zeros((len(V) - len(U), 2))])

@@ -210,6 +210,7 @@ namespace Humans
                 f.age = rng.Range(p.ageMin, p.ageMax);
                 f.ageLines = Mathf.Max(0f, (f.age - 0.4f) / 0.6f) * 1.1f;
             }
+            f.headScale = p.headScaleMax > 0f ? rng.Range(p.headScaleMin, p.headScaleMax) : 1f;   // last, as the age
             return true;
         }
 

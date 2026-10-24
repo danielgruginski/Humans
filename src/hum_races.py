@@ -29,8 +29,9 @@ ELF = dict(
     height=(0.3, 0.8),
     sex_min=0.0,
     blush=(0.0, 0.15),
-    outfit=dict(M=["Shirt:#d8d0b8", "Leggings:#2e3a22", "Coat:#3c4a2a", "Boots:#3a2a1a", "Cloak:#2c3a24"],
-                F=["Shirt:#d8d0b8", "Leggings:#2e3a22", "Coat:#3c4a2a", "Boots:#3a2a1a", "Cloak:#2c3a24"]),  # preview
+    outfit=dict(M=["Shirt:#d8d0b8", "Leggings:#2e3a22", "ElvenTunic:#3c5a2e", "Boots:#3a2a1a", "ElvenCape:#2c4026"],
+                F=["Shirt:#d8d0b8", "Leggings:#2e3a22", "ElvenTunic:#4a5e34", "Boots:#3a2a1a", "ElvenCape:#5a4a2e"]),  # preview
+                                                           # (hum_elven: the leaf-hemmed tunic and cape, 2026-10-23)
 )
 
 GIANT = dict(
@@ -95,13 +96,15 @@ DEMON = dict(
 )
 
 IMP = dict(
-    # a small, wiry demon: the Slim build (scaled ~0.55 in Unity), big pointed ears, a pinched face, red to violet
+    # a small, wiry demon: its own Imp build (short legs, long arms, pot belly; scaled ~0.55 in Unity) and a big head
+    # (head_scale: the head bone's scale in Unity), big pointed ears, a pinched face, red to violet
     name="Imp",
     sliders={"EarPointed": (1.0, 0.0), "EarSize": (0.9, 0.1), "EarOut": (0.6, 0.15), "BrowAngle": (0.7, 0.15),
              "BrowHeavy": (0.5, 0.15), "NoseLength": (0.5, 0.2), "NoseTipUp": (-0.4, 0.2), "ChinForward": (0.6, 0.15),
              "ChinWidth": (-0.6, 0.15), "CheekBones": (0.7, 0.15), "CheekFull": (-0.6, 0.15), "MouthWidth": (0.5, 0.15),
              "MouthCorners": (0.4, 0.15), "Lipless": (0.5, 0.1), "EyeSize": (0.3, 0.15), "HeadLength": (0.3, 0.15)},
-    build="Slim",
+    build="Imp",
+    head_scale=(1.28, 1.4),
     fem_scale=1.0,
     tones=["#a83a2a", "#8a2a3a", "#6a2a4a", "#b04a2a"],     # reds to violet
     lip_from_tone=(0.45, 0.25, 0.25),

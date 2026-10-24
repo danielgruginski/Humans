@@ -824,6 +824,8 @@ import hum_elemental                                      # noqa: E402  (the ear
 GARMENTS.update(hum_elemental.ELEMENTAL_WEAR)
 import hum_wings                                          # noqa: E402  (demons', imps' and angels' wings)
 GARMENTS.update(hum_wings.WINGS)
+import hum_elven                                          # noqa: E402  (the elves' leaf-hemmed tunic and cape)
+GARMENTS.update(hum_elven.ELVEN)
 
 
 # ------------------------------------------------------------------ objects

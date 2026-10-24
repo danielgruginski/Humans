@@ -38,6 +38,8 @@ namespace Humans
         [Range(-1, 1)] public float muscle;     // -1 slight .. +1 muscular
         public Vector3 ancestry = new Vector3(1f / 3, 1f / 3, 1f / 3);   // african, asian, european (sum 1)
         [Range(-1, 1)] public float height;     // -1 short .. +1 tall (a uniform scale of the whole character)
+        [Tooltip("The head bone's scale (hair, horns, eyes and headgear follow it): the imps' big heads; 1 = as built")]
+        [Range(0.8f, 1.6f)] public float headScale = 1f;
 
         [Tooltip("Body build tag (config builds: MSlim, MStrong, MHeavy, FSlim, FStrong, FHeavy)")]
         public string build = "MSlim";
