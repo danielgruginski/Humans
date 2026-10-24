@@ -359,6 +359,14 @@ namespace Humans
                 foreach (var n in face.GarmentNames) on |= Config.FindGarment(n)?.slot == "wings";
                 if (wings.enabled != on) wings.enabled = on;
             }
+            // the fingers held short of a fist while claws are worn (the ghoul: the talons stay in front of the palm)
+            var claws = GetComponent<HumanClawHands>();
+            if (claws != null)
+            {
+                bool on = false;
+                foreach (var n in face.GarmentNames) on |= Config.FindGarment(n)?.slot == "claws";
+                if (claws.enabled != on) claws.enabled = on;
+            }
             // and the skirt ring while a skirt is
             var skirt = GetComponent<HumanSkirt>();
             if (skirt != null)

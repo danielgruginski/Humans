@@ -405,6 +405,22 @@ namespace Humans.EditorTools
             Debug.Log("[HumanSetup] wings " + string.Join(",", json.wings.Select(c => c.side)));
         }
 
+        /// <summary>HumanClawHands (2026-10-24, the ghoul's talons through its fists): every finger joint, both hands,
+        /// and its bind-pose rotation (the open hand); disabled - HumanFace switches it on while claws are worn.</summary>
+        static void AddClaws(GameObject root, Dictionary<string, Transform> boneMap)
+        {
+            var joints = new List<Transform>();
+            foreach (var side in new[] { "l", "r" })
+                foreach (var f in new[] { "thumb", "index", "middle", "ring", "pinky" })
+                    for (int j = 1; j <= 3; j++)
+                        joints.Add(boneMap.TryGetValue($"{f}_0{j}_{side}", out var t) ? t : null);
+            if (joints.Any(t => t == null)) { Debug.LogWarning("[HumanSetup] claws: finger bones missing"); return; }
+            var c = root.AddComponent<HumanClawHands>();
+            c.joints = joints.ToArray();
+            c.rest = joints.Select(t => t.localRotation).ToArray();
+            c.enabled = false;
+        }
+
         /// <summary>HumanSkirt per skirt ring in human_rig.json: the columns' bind data (hanging directions in the
         /// Animator's frame, the knee points in each thigh's space) and capsules on the thighs, calves, heels and
         /// toes. Call before anything poses the model.</summary>
@@ -703,6 +719,7 @@ namespace Humans.EditorTools
             AddSpringChains(root, boneMap);
             AddSkirts(root, boneMap);
             AddWings(root, boneMap);
+            AddClaws(root, boneMap);
             // hand sockets from the rest skeleton (and the shield's on the left forearm), then the stand-in props
             // shown while their states play
             var socketR = AddHandSocket(boneMap, "r");

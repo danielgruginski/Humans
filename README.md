@@ -699,6 +699,16 @@ type of zombie"). The human made into it like the zombie, plus:
   `Sprint01_Forward` (arch 1.5), `AttackDW01/02` (two-handed claw rakes), `Zombie_Bite` (arch 0.5), `Loot01 - Loop`
   (feeding). Check: MedievalSetting `Tools > Game > Checks > Ghoul Lineup` (`GhoulCheck`: a preview scene, no scene
   switch) -> `Logs/Ghoul` (three-quarter, profile, the game camera at 22 and 13 m).
+- **No fists** (`HumanClawHands`, 2026-10-24; Daniel: "the ghoul has the fist clutched in some animations, making the
+  nails pierce the hand to the other side"): the talons ride the fingers' last bones, so a clip's clenched fist drove
+  them through the palm and out of the back of the hand (309 of 900 sampled frames over 18 clips, up to 13 cm: the
+  bought attacks, run, sprint, hurt and death worst). After the Animator, each finger joint's bend from the open hand
+  of the bind pose is held to 40 / 40 / 20 degrees (proximal, middle, last; the thumb x0.75): fists become claws.
+  HumanSetup adds it to the prefab (disabled, the 30 finger joints and their bind rotations); HumanFace switches it on
+  while a `claws` garment is worn (the ghoul only). Left: 1 frame in 900 (a thumb, 0.7 cm, in Attack2H01,
+  where both hands meet). Check: MedievalSetting `Tools > Game > Checks > Ghoul Claws` (`GhoulCheck.ClawReport`: every
+  talon vertex against its hand's palm, sampled through the clips, with no limit, a range of limits and the component)
+  -> `Logs/Ghoul/claws.txt`.
 - Export without touching the other cloth families: `hum_ghoul.export()` (body, hair, Rags, Undead, config, rig). Unity:
   `Tools > Humans > Rebuild Prefab Only` (new: everything but the showcase scene, which opens in Single mode).
 

@@ -623,3 +623,9 @@ Done: head + eyes, stylisation, UVs, paint masks, preview shader, 98 keys, rando
   Gotcha: a deform that lowers the body must keep `joint-ground` still - `full_coords` re-grounds by it after every
   deform, which first undid the drop (feet 18.8 cm up, pelvis unmoved). Open: the imp's face is still the human head
   with sliders (no grin of its own); nothing in the game spawns imps or elves yet.
+- 2026-10-24 (Daniel, after watching MedievalSetting's Creatures_Test: "the ghoul has the fist clutched in some
+  animations, making the nails pierce the hand to the other side"): **`HumanClawHands`** (README "The ghoul" > No
+  fists): finger joints held to 40/40/20 deg from the open hand while claws are worn. Measured in Unity first (no limit:
+  309/900 frames pierced, up to 13 cm; 45/45/25: 3; 40/40/20: 1, a thumb at 0.7 cm), renders of the worst hands with
+  and without in MedievalSetting `Logs/Ghoul/claw_*.png`. Installed, Rebuild Prefab Only; on for the ghoul, off for
+  the elf and the lich.
