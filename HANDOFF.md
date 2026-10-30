@@ -1016,25 +1016,32 @@ Done: head + eyes, stylisation, UVs, paint masks, preview shader, 98 keys, rando
     and hung straight down (a flat curtain from the side). Now an outline drawn in profile on this head, strands combed
     toward the chin and gathered into locks, and cards lit as the beard's volume (`beard_normal`), not the skin under it
     (under the jaw that faces the floor: the beard went black). Out of the sim (Guide -2), rigid on the head with exact keys,
-    as the clump beards. Tris (L0 / L1 / L2): Full 17.2k / 2.2k / 314, Wizard 21.8k / 2.7k / 310, Dwarf 23.2k / 2.9k / 314,
-    Goatee 4.7k / 739 / 128, Mustache 1.7k / 352 / 56, Short 14.4k / 2.3k / 291, ShortSideburns 15.6k / 2.5k / 305, ChinStrap
+    as the clump beards. Tris (L0 / L1 / L2): Full 19.8k / 2.6k / 358, Wizard 24.5k / 3.2k / 358, Dwarf 26.0k / 3.4k / 362,
+    Goatee 5.8k / 992 / 130, Mustache 3.0k / 542 / 75, Short 16.9k / 2.7k / 340, ShortSideburns 18.2k / 2.9k / 354, ChinStrap
     9.7k / 1.7k / 198. Renders: renders/beards_compare.png (all 8: front, 3/4, side), beards_check.png (other faces and
     colours; headgear + a goatee close-up; L1; L2 at 9 m).
     - **Sideburns** (Daniel: a Short beard stopped as a patch on the cheek): everything but Goatee and Mustache runs up in
       front of the ear into the hair, a band about 2 cm wide (top edge zm + 0.076, the hair's edge there is around z 1.45), not
       a wedge narrowing to nothing. Short differs from ShortSideburns only by its cleaner cheek line now. Sideburn strands
       hang straight (`burn` in `beard_tip`); roots may sit 5 mm from the ear (at 12 mm the band had no strands).
-    - Nothing over the mouth: the beard's edge stays further from the lower lip than from the upper; pointed card roots,
-      because square ones read as teeth. Roots beside the mouth's corners droop short and on the skin: free, they stood off the
-      receding chin as stray wires. The goatee shows them as a small gap between mustache and chin patch.
-    - Still rough: the mustache's cards read as blades in an extreme close-up (fine at normal range); one or two thin
+    - **Mustache** (Daniel: "the capilars are not placed in the correct anatomical position"): redrawn from the head's measured
+      upper lip, in x and z (`TACHE_X/TOP`, `TACHE_X_LIP/LIP`), shared by Mustache, Goatee, Full, Wizard, Dwarf, Short and
+      ShortSideburns. It was a thin band hugging the lip, 5 mm short of the nose and thinning out by x 21 mm (its top edge came
+      from the beard's y table, and `F.lip_x` 22.8 mm is narrower than the real corner, 28.2 mm), with hair running almost sideways.
+      Now: lip's edge (z +9 mm) up to just under the nose (+20.5 at the middle, +22 under the nostril), falling to the corner.
+      `tache_tip`: down and outward from the midline, 20 deg off vertical there, 55 at the corner, on the skin, ending at the
+      lip's edge. Its own fine cards in its own pass (`TACHE_SPACING`, `TACHE_WIDTH`): a Full beard's cards are wider than
+      the whole upper lip. Render: renders/mustache_check.png (close-ups, from below, L1, L2 at 9 m; other faces).
+    - Nothing over the mouth: pointed card roots, because square ones read as teeth. Roots beside the mouth's corners droop
+      short and on the skin: free, they stood off the receding chin as stray wires. A goatee's patch is a wedge narrowing up.
+    - Still rough: a bare oval stays around the lips in Full and Short (`lips` keeps 2..5 mm below them); one or two thin
       edge-on wires on Wizard from the side; L2 Dwarf/Wizard read as a beard from the game camera, the short styles barely.
     - Short cards read as leaves (wool): a card's width is capped at half its length, `spread` 0.2 (how round it lights).
     - Headgear: fine, the same cuts as the clump ones (hood_cut beard=True).
     - `beardShadow`: `HumanFaceGenerator` sets 0.5 only for the exact old names, so these get 0, which is right: the skin tint
       is painted to the old stencil (T_Head_MaskB) and would show around the new outline. No face config offers these yet;
       `HumanHairCardsSpike.Offer` adds them to a face's list.
-    - Installed Human_HairCards.fbx is now 158 MB. hum_export.export_hair takes everything in HUM_Hair, these too: filter it
+    - Installed Human_HairCards.fbx is now 165 MB. hum_export.export_hair takes everything in HUM_Hair, these too: filter it
       when re-exporting Human_Hair.fbx (see "Re-exporting Human_Hair.fbx").
   - **Fixed for all strand styles** (2026-10-30): (a) LOD2 was bald. The parting clip reads HoodCut.y and the copies had
     no `hair_part`, so 0 read as "on the parting" and the shell was cut away. `lod2_copy` now writes 99. Not seen in game:

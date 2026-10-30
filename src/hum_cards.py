@@ -786,6 +786,13 @@ def stand_parts(H, name, seed=0, lod=0):
 #            x: 0 a point, 1 a curtain), cheek_L: the longest strand away from the chin (m)
 #   bulge    how far strands stand off the skin at the chin (m); lock, gather: the locks' spacing, how far tips go to them
 #   hug      short styles: the tip stays on the skin, under the chin too
+# the mustache on this head (m, from the mouth's line): its top edge by x, the upper lip's edge by x; and its own cards, fine
+# whatever the beard around it (a Full beard's cards are wider than the whole upper lip)
+TACHE_X = (0.0, 0.005, 0.010, 0.014, 0.018, 0.022, 0.026, 0.030, 0.033)
+TACHE_TOP = (0.0205, 0.021, 0.022, 0.021, 0.018, 0.014, 0.0095, 0.004, -0.002)
+TACHE_X_LIP = (0.0, 0.003, 0.006, 0.020, 0.024, 0.027, 0.0282, 0.031)
+TACHE_LIP = (0.0088, 0.0095, 0.0099, 0.0099, 0.0092, 0.0066, 0.001, -0.004)
+TACHE_SPACING, TACHE_WIDTH = 0.0028, 0.0034
 BEARD_LAYERS = [(1.8, 0.0, 1.8, (0, 1, 2), 0.0), (1.0, 0.0008, 1.0, (0, 1, 2), 0.4), (1.3, 0.0016, 0.8, (3, 4, 5), 0.8),
                 (2.5, 0.0024, 0.5, (6, 7), 1.1)]
 _LONG = dict(shape="full", v0=0.5, cap_light=0.8, cap=0.002)
@@ -800,7 +807,7 @@ BEARD_CARDS = {
                          gather=0.6, cap=0.0025),
     "GoateeStrands": dict(_LONG, shape="goatee", spacing=0.005, width=0.0075, drop=0.022, cv=0.35, cheek_L=0.06, bulge=0.004,
                           lock=0.014, gather=0.6, cap=0.0015),
-    "MustacheStrands": dict(_LONG, shape="mustache", spacing=0.003, width=0.0035, drop=0.0, cv=1.0, cheek_L=0.03,
+    "MustacheStrands": dict(_LONG, shape="mustache", spacing=TACHE_SPACING, width=TACHE_WIDTH, drop=0.0, cv=1.0, cheek_L=0.03,
                             bulge=0.002, lock=0.0, gather=0.0, cap=0.0012),
     "ShortStrands": dict(_TRIM, shape="short"),
     "ShortSideburnsStrands": dict(_TRIM, shape="full"),
@@ -816,8 +823,8 @@ def beard_outline(H, shape):
     F = H.F
     yc, zm = float(F.chin[1]), float(F.mouth[2])
     dy = (-0.018, -0.008, -0.0006, 0.0074, 0.0224, 0.0374, 0.0524, 0.0614, 0.0684, 0.0764)
-    top = (0.019, 0.017, 0.009, 0.006, 0.013, 0.022, 0.032, 0.046, 0.066, 0.076)
-    top_short = (0.019, 0.017, 0.009, 0.006, 0.010, 0.012, 0.016, 0.032, 0.064, 0.076)     # the cheek clean, the same sideburn
+    top = (0.006, 0.006, 0.006, 0.006, 0.013, 0.022, 0.032, 0.046, 0.066, 0.076)
+    top_short = (0.006, 0.006, 0.006, 0.006, 0.010, 0.012, 0.016, 0.032, 0.064, 0.076)     # the cheek clean, the same sideburn
     low_y = (-0.018, 0.0424, 0.0474, 0.0574, 0.0624, 0.0724, 0.0764)
     low = (-0.053, -0.053, -0.045, -0.04, -0.03, -0.01, 0.01)
     jaw_y = (0.0764, 0.0624, 0.0474, 0.0324, 0.0174, 0.0024, -0.0076)         # the jaw's edge, for the strap
@@ -830,17 +837,19 @@ def beard_outline(H, shape):
         low_z = np.interp(y, low_y, low)
         below = ss(low_z - 0.002, low_z + 0.003, z) * ss(y_back - yc + 0.001, y_back - yc - 0.003, y)
         d_lip = H.lip_dist(P)
-        lips = np.where(z < -0.002, ss(0.003, 0.008, d_lip), ss(0.0015, 0.004, d_lip))
+        lips = np.where(z < -0.002, ss(0.002, 0.005, d_lip), ss(0.0015, 0.004, d_lip))
         top_z = np.interp(y, dy, top)
-        lip_x = float(F.lip_x)
-        # the mustache: under the nose to the mouth's corners, its ends drooping past them
-        droop = ss(lip_x + 0.014, lip_x + 0.009, ax) * ss(lip_x - 0.002, lip_x + 0.002, ax) * ss(-0.009, -0.005, z)
-        over = ss(0.002, 0.004, z) * ss(lip_x + 0.014, lip_x + 0.009, ax)
-        tache = np.maximum(over, droop) * ss(top_z + 0.002, top_z - 0.003, z) * ss(0.02, 0.012, y)   # (the face only)
+        # the mustache, drawn on the upper lip as measured (x, z from the mouth's line): from just under the nose and its
+        # wings, the top edge falling to the mouth's corner (28 mm); the lip below it is `lips`' to keep clear, its ends a
+        # little past the corners, and lower
+        t_top = np.interp(ax, TACHE_X, TACHE_TOP)
+        t_low = np.interp(ax, (0.026, 0.0285, 0.031), (0.006, 0.001, -0.003))
+        tache = (ss(t_top + 0.001, t_top - 0.002, z) * ss(t_low - 0.001, t_low + 0.001, z) * ss(0.032, 0.029, ax)
+                 * ss(0.024, 0.018, y))                # (the face only)
         if shape == "mustache":
             return tache * lips
         if shape == "goatee":                                               # + a chin patch, narrow under the lip
-            wide = np.interp(z, (-0.04, -0.012), (0.021, 0.010))
+            wide = np.interp(z, (-0.042, -0.018), (0.02, 0.006))
             chin = ss(-0.006, -0.012, z) * ss(wide + 0.003, wide - 0.003, ax) * ss(0.0424, 0.0324, y) * below
             return np.maximum(tache, chin) * lips
         if shape == "strap":                                                # a band on the jaw, rising to the sideburn
@@ -850,19 +859,30 @@ def beard_outline(H, shape):
             return ss(edge + 0.002, edge - 0.003, z) * below * lips
         if shape == "short":
             top_z = np.interp(y, dy, top_short)
-        return ss(top_z + 0.002, top_z - 0.003, z) * below * lips
+        return np.maximum(ss(top_z + 0.002, top_z - 0.003, z) * below, tache) * lips
     return area
+
+
+def tache_tip(H, r, rng):
+    """Where a mustache strand from r lies: as the hair grows there, down and outward from the midline (about 20 deg off
+    straight down at the philtrum, 55 at the mouth's corner), on the skin, ending at the lip's edge."""
+    zm = float(H.F.mouth[2])
+    ax = abs(float(r[0]))
+    a = np.radians(20.0 + 35.0 * min(ax / 0.028, 1.0)) * rng.uniform(0.9, 1.1)
+    d = np.array([np.sign(r[0] + 1e-6) * np.sin(a), 0.0, -np.cos(a)])
+    L = float(np.clip((r[2] - zm - np.interp(ax, TACHE_X_LIP, TACHE_LIP)) / np.cos(a) * rng.uniform(0.95, 1.1), 0.006, 0.016))
+    tip = r + d * min(L, max(0.0325 - ax, 0.003) / max(abs(d[0]), 1e-3))
+    tip[2] = max(tip[2], zm + float(np.interp(abs(tip[0]), TACHE_X_LIP, TACHE_LIP)))
+    return tip
 
 
 def beard_tip(H, sv, r, rng, layer_k):
     """Where a strand from r is combed to, and how much of it there is around the chin (0..1)."""
     F = H.F
     zm = float(F.mouth[2])
-    corner = r[1] < F.chin[1] + 0.012 and zm - 0.016 < r[2] and abs(r[0]) > float(F.lip_x) - 0.002
-    if sv["shape"] == "mustache" or corner or (r[2] > zm + 0.002 and r[1] < F.chin[1] + 0.012):    # the mustache: out and drooping
-        over = r[2] > zm + 0.002
-        d = _unit(np.array([np.sign(r[0] + 1e-6) * (1.0 if over else 0.3), -0.15, -0.38 if over else -1.0]))
-        return r + d * (rng.uniform(0.02, 0.03) if over else rng.uniform(0.008, 0.012)), 0.0
+    if r[1] < F.chin[1] + 0.012 and zm - 0.016 < r[2] and abs(r[0]) > float(F.lip_x) - 0.002:     # beside the mouth's corners
+        d = _unit(np.array([np.sign(r[0] + 1e-6) * 0.3, -0.15, -1.0]))
+        return r + d * rng.uniform(0.008, 0.012), 0.0
     w = float(np.exp(-0.5 * ((abs(r[0]) / 0.042) ** 2 + ((r[1] - F.chin[1] - 0.008) / 0.05) ** 2)))
     z0 = zm - 0.043                                                       # the chin's underside
     burn = ss(0.045, 0.068, r[1] - F.chin[1])
@@ -905,22 +925,26 @@ def beard_card_parts(H, name, seed=0, lod=0):
         h = float(np.dot(q - loc, n))
         return q + n * (floor - h) if h < floor else q
 
-    for li, (sk, fl, wk, cols, bk) in enumerate(layers):
-        rng = np.random.default_rng(seed * 100 + li)
+    tache = beard_outline(H, "mustache") if sv["shape"] != "strap" else None
+    passes = [(li, ly, is_t) for li, ly in enumerate(layers)
+              for is_t in ((True,) if sv["shape"] == "mustache" else (False, True) if tache is not None else (False,))]
+    for li, (sk, fl, wk, cols, bk), is_tache in passes:
+        rng = np.random.default_rng(seed * 100 + li + (50 if is_tache else 0))
         layer_k = li / max(len(layers) - 1, 1)
         floor = sv["cap"] + 0.0008 + fl
         roots, spines, W = [], [], []
-        for r0 in scalp_points(H, mask, sv["spacing"] * sk * k_space, seed * 10 + li, thresh=0.5):
-            if float(H.ear_dist(r0)) < 0.005:
+        spacing, width = (TACHE_SPACING, TACHE_WIDTH) if is_tache else (sv["spacing"], sv["width"])
+        for r0 in scalp_points(H, tache if is_tache else mask, spacing * sk * k_space, seed * 10 + li, thresh=0.5):
+            if float(H.ear_dist(r0)) < 0.005 or (not is_tache and tache is not None and float(tache(r0)) > 0.5):
                 continue
             loc, n, _ = H.nearest(r0)
-            tip, w_chin = beard_tip(H, sv, loc, rng, layer_k)
-            if locks is not None and w_chin > 0.0:        # (not the mustache)
+            tip, w_chin = (tache_tip(H, loc, rng), 0.0) if is_tache else beard_tip(H, sv, loc, rng, layer_k)
+            if locks is not None and w_chin > 0.0:
                 tip = tip + (locks_tip[int(np.argmin(((locks - loc) ** 2).sum(1)))] - tip) * sv["gather"]
             if sv.get("hug") or w_chin == 0.0:
                 t_loc, t_n, _ = H.nearest(tip)
                 tip = t_loc + t_n * (floor + 0.001)
-            bulge = sv["bulge"] * bk * (0.3 + 0.7 * w_chin)
+            bulge = 0.0012 * bk if is_tache else sv["bulge"] * bk * (0.3 + 0.7 * w_chin)
             start = loc + n * (sv["cap"] + 0.0005)
             mid = start + n * bulge * 2.0 + (tip - start) * 0.4     # (a quadratic's middle reaches half its control)
             S = []
@@ -933,7 +957,7 @@ def beard_card_parts(H, name, seed=0, lod=0):
                 continue
             roots.append(loc)
             spines.append(S)
-            v = min(sv["width"] * wk * rng.uniform(0.85, 1.15), L * 0.5) * k_width
+            v = min(width * wk * rng.uniform(0.85, 1.15), L * 0.5) * k_width
             W.append(lambda t, v=v: v * (0.45 + 0.55 * ss(0.0, 0.18, t)) * (1.0 - 0.75 * ss(0.4, 1.0, t)))
         if not roots:
             continue
