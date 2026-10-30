@@ -13,8 +13,23 @@ namespace Humans
         static readonly string[] FaceShapes = { "FaceSquare", "FaceRound", "FaceOval", "FaceTriangle", "FaceInvTriangle", "FaceDiamond" };
         static readonly string[] Looks = { "natural", "sunkissed", "ombre", "streaks", "twotone" };
         static readonly float[] LookWeights = { 50, 20, 12, 12, 6 };
+        const float FaceNoise = 0.55f;                                  // hum_faces.FACE_NOISE
 
-        public static HumanFaceData Random(HumanFaceConfig cfg, int seed)
+        /// <summary>The face type's stream: its own, so hair, clothes and body of a seed don't depend on it.</summary>
+        static Rng TypeRng(int seed) => new Rng(unchecked(seed * 1000003 + 12345));
+
+        static HumanFaceConfig.FaceType PickType(HumanFaceConfig cfg, Rng rng, bool masc)
+        {
+            if (cfg.faceTypes == null || cfg.faceTypes.Length == 0) return null;
+            var odds = new List<(string name, float w)>();
+            foreach (var t in cfg.faceTypes) odds.Add((t.name, masc ? t.masc : t.fem));
+            return cfg.FindFaceType(rng.Weighted(odds));
+        }
+
+        /// <summary>The face type a seed rolls for this sex.</summary>
+        public static string FaceTypeOf(HumanFaceConfig cfg, int seed, bool masc) => PickType(cfg, TypeRng(seed), masc)?.name;
+
+        public static HumanFaceData Random(HumanFaceConfig cfg, int seed, string forceType = null)
         {
             var rng = new Rng(seed);
             var f = new HumanFaceData { seed = seed };
@@ -30,16 +45,25 @@ namespace Humans
             anc /= anc.x + anc.y + anc.z;
             f.ancestry = anc;
 
+            var typeRng = TypeRng(seed);
+            var type = PickType(cfg, typeRng, masc);
+            if (forceType != null) type = cfg.FindFaceType(forceType);
+            float strength = typeRng.Range(0.75f, 1.2f);
+            float old = Mathf.Max(0f, (age - 0.35f) / 0.65f);
+
             f.sliders.Clear();
             foreach (var s in cfg.sliders)
             {
                 if (s.presetOnly) { f.sliders.Add(new HumanFaceData.SliderValue(s.name, 0f)); continue; }   // no draw: faces stay
-                float bias = (masc ? s.mascBias : s.femBias) + (s.name == "MouthCorners" ? 0.25f : 0f);
-                float v = rng.Gauss(bias * sex, 0.3f) * s.spread;
+                float mean = ((masc ? s.mascBias : s.femBias) + (s.name == "MouthCorners" ? 0.25f : 0f)) * sex;
+                float v = rng.Gauss(mean, 0.3f);
+                if (Array.IndexOf(cfg.bodySliders, s.name) < 0) v = mean + (v - mean) * FaceNoise;
+                v *= s.spread;
                 if (s.name.StartsWith("Face") && !s.hasNeg && Array.IndexOf(FaceShapes, s.name) >= 0)
-                    v = rng.Value() < 0.35 ? Mathf.Abs(rng.Gauss(0, 0.25f)) : 0f;
+                    v = rng.Value() < 0.35 ? Mathf.Abs(rng.Gauss(0, 0.25f)) * FaceNoise : 0f;
                 if (s.name == "EarPointed" || s.name == "ChinCleft" || s.name == "Belly")
                     v = Mathf.Max(0, rng.Gauss(-0.2f, 0.4f));
+                v += (type != null ? type.Mean(s.name) * strength : 0f) + s.flesh * f.weight + s.old * old;
                 v = 0.7f * (float)Math.Tanh(v / 0.7f);          // random faces stay off the extremes
                 if (!s.hasNeg) v = Mathf.Max(0, v);
                 f.sliders.Add(new HumanFaceData.SliderValue(s.name, v));

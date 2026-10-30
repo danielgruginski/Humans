@@ -150,6 +150,32 @@ def export_cloth_family(family):
     return path, len(objs)
 
 
+def export_body():
+    """Only Human_Body.fbx (the rig, head and body and their LODs), as export_models writes it: for a moved helper
+    bone (the cape chain, 2026-10-27) without re-exporting hair and every cloth family."""
+    head = bpy.data.objects["Head"]
+    keys = head.data.shape_keys.key_blocks
+    saved = {k.name: k.value for k in keys}
+    for k in keys:
+        k.value = 0.0
+    arm = bpy.data.objects["HumanRig"]
+    for pb in arm.pose.bones:
+        pb.location = (0, 0, 0)
+    saved_scale = tuple(arm.scale)
+    arm.scale = (1, 1, 1)
+    body_parts = [o for o in (bpy.data.objects.get(n) for n in ("Body", "Body_L1", "Body_L2", "Head_L1", "Head_L2"))
+                  if o is not None]
+    for o in body_parts:
+        for k in (o.data.shape_keys.key_blocks if o.data.shape_keys else []):
+            k.value = 0.0
+    try:
+        return _export([arm, head] + body_parts, os.path.join(EXPORT, "Human_Body.fbx"))
+    finally:
+        for k in keys:
+            k.value = saved[k.name]
+        arm.scale = saved_scale
+
+
 def export_hair():
     """Only Human_Hair.fbx (every hair, beard and brow piece and their LODs), as export_models writes it: for a new
     style without re-exporting the body and the clothes."""
@@ -180,6 +206,12 @@ def export_hair():
         arm.scale = saved_scale
 
 
+def _tip_ratio(arm, bones):
+    """A chain's last link against the one before (graded links: the tail isn't one more link of the same length)."""
+    b = [arm.data.bones[n] for n in bones]
+    return float((b[-1].tail_local - b[-1].head_local).length / max((b[-1].head_local - b[-2].head_local).length, 1e-6))
+
+
 def export_rig():
     """Rest bone heads and per-key bone deltas (Blender armature space) for the runtime skeleton."""
     sk = hum_rig.SK
@@ -203,14 +235,16 @@ def export_rig():
                              hang=h.get("side", "") if h["drive"] == "hang" else "")
                         for n, h in hum_helpers.HELPERS.items() if h["drive"] not in ("spring", "ring", "wing")],
                # spring chains, simulated by HumanSpringChain
-               springs=[dict(bones=list(hum_helpers.CAPE))],
+               # (tip: the last link's length against the one before - Unity extrapolates the tail from them)
+               springs=[dict(bones=list(c["bones"]), side=c["side"], tip=_tip_ratio(arm, c["bones"]))
+                        for c in hum_helpers.CAPE_COLUMNS],
                # the wings' chains (root, elbow, wrist; hand tip = the last one's tail), driven by HumanWings
                wings=[dict(side=sd, bones=list(hum_helpers.WING[sd])) for sd in ("l", "r")],
-               # the skirt ring, simulated by HumanSkirt: per column the hip link, the knee link, its tip, and
-               # the left thigh's share (seated it follows the thighs)
-               skirts=[dict(columns=[dict(hip=a, knee=k, hem=e,
+               # the skirt ring, simulated by HumanSkirt: per column the hip, mid and knee links, the knee link's
+               # tip, and the left thigh's share (seated it follows the thighs)
+               skirts=[dict(columns=[dict(hip=a, mid=m, knee=k, hem=e,
                                           side=float(hum_helpers.ss(-0.11, 0.11, arm.data.bones[k].head_local.x)))
-                                     for (a, k), e in zip(hum_helpers.SKIRT_RING, hum_helpers.SKIRT_HEM)],
+                                     for (a, m, k), e in zip(hum_helpers.SKIRT_RING, hum_helpers.SKIRT_HEM)],
                             raiseFrom=hum_helpers.RING_RAISE[0], raiseTo=hum_helpers.RING_RAISE[1])])
     path = os.path.join(EXPORT, "human_rig.json")
     with open(path, "w", encoding="utf-8") as f:
@@ -242,8 +276,8 @@ def _skirt_slack(garment):
     for tag in hum_builds.BUILDS:
         ob = bpy.data.objects.get(f"Cloth_{garment}_{tag}")
         if ob is not None:
-            hip, knee = hum_helpers.ring_slack(ob, joints)
-            out.append(dict(build=tag, hip=hip, knee=knee))
+            hip, mid, knee = hum_helpers.ring_slack(ob, joints)
+            out.append(dict(build=tag, hip=hip, mid=mid, knee=knee))
     return out
 
 
@@ -252,7 +286,8 @@ def export_config():
     F = hum_faces
     cfg = dict(
         sliders=[dict(name=n, hasNeg=neg is not None, presetOnly=n in F.PRESET_ONLY,
-                      spread=F.SPREAD.get(n, 1.0), femBias=F.FEM_BIAS.get(n, 0.0), mascBias=F.MASC_BIAS.get(n, 0.0))
+                      spread=F.SPREAD.get(n, 1.0), femBias=F.FEM_BIAS.get(n, 0.0), mascBias=F.MASC_BIAS.get(n, 0.0),
+                      flesh=F.FACE_FLESH.get(n, 0.0), old=F.FACE_OLD.get(n, 0.0))
                  for n, pos, neg in F.SLIDERS],
         macros=list(F.MACROS.keys()),
         correctives=[dict(name=k, a=a, b=b) for k, (a, b) in F.CORRECTIVES.items()],
@@ -291,6 +326,8 @@ def export_config():
         hairStyles=[dict(name=k or "", masc=v[0], fem=v[1]) for k, v in F.HAIR_W.items()],
         beardStyles=[dict(name=k or "", w=v) for k, v in F.BEARD_W.items()],
         browStyles=[dict(name=k, masc=v[0], fem=v[1]) for k, v in F.BROW_W.items()],
+        faceTypes=[dict(name=n, masc=m, fem=fm, sliders=[dict(name=k, mean=v, jitter=0.0) for k, v in s.items()])
+                   for n, m, fm, s in F.FACE_TYPES],
         # face presets over a rolled face: the orcs, the undead (zombie, skeleton)
         presets=[hum_orcs.export(p) for p in hum_orcs.PRESETS] + [hum_undead.export(p) for p in hum_undead.PRESETS]
                 + [hum_undead.export(p) for p in hum_races.PRESETS],                # elves, giants, earth elementals

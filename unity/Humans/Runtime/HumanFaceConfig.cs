@@ -12,7 +12,7 @@ namespace Humans
     public class HumanFaceConfig
     {
         /// <summary>presetOnly: a preset's alone (the orcs' jaw, brow and body shapes): random faces never roll it.</summary>
-        [Serializable] public class Slider { public string name; public bool hasNeg, presetOnly; public float spread = 1, femBias, mascBias; }
+        [Serializable] public class Slider { public string name; public bool hasNeg, presetOnly; public float spread = 1, femBias, mascBias, flesh, old; }
         [Serializable] public class Corrective { public string name, a, b; }
         [Serializable] public class NamedColor { public string name, hex; }
         [Serializable] public class SexWeighted { public string name; public float masc, fem; }
@@ -24,13 +24,14 @@ namespace Humans
             public bool hangs;                                            // has a skirt on the ring (HumanSkirt)
             public SkirtSlack[] skirtSlack; }
         /// <summary>How far a garment's skirt stands outside each ring column, per build (hum_helpers.ring_slack).</summary>
-        [Serializable] public class SkirtSlack { public string build; public float[] hip, knee; }
+        [Serializable] public class SkirtSlack { public string build; public float[] hip, mid, knee; }
 
-        /// <summary>Per ring column, the tightest worn skirt's slack (the cloth a leg reaches first): hip link, knee
-        /// link. 1 (no cloth) where nothing worn hangs.</summary>
-        public void SkirtSlackOf(IEnumerable<string> worn, string build, float[] hip, float[] knee)
+        /// <summary>Per ring column, the tightest worn skirt's slack (the cloth a leg reaches first): hip link, mid
+        /// link, knee link. 1 (no cloth) where nothing worn hangs.</summary>
+        public void SkirtSlackOf(IEnumerable<string> worn, string build, float[] hip, float[] mid, float[] knee)
         {
             for (int i = 0; i < hip.Length; i++) hip[i] = 1f;
+            for (int i = 0; i < mid.Length; i++) mid[i] = 1f;
             for (int i = 0; i < knee.Length; i++) knee[i] = 1f;
             foreach (var n in worn)
             {
@@ -40,6 +41,7 @@ namespace Humans
                 {
                     if (sl.build != build) continue;
                     for (int i = 0; i < hip.Length && i < sl.hip.Length; i++) hip[i] = Mathf.Min(hip[i], sl.hip[i]);
+                    for (int i = 0; sl.mid != null && i < mid.Length && i < sl.mid.Length; i++) mid[i] = Mathf.Min(mid[i], sl.mid[i]);
                     for (int i = 0; i < knee.Length && i < sl.knee.Length; i++) knee[i] = Mathf.Min(knee[i], sl.knee[i]);
                 }
             }
@@ -176,6 +178,27 @@ namespace Humans
             public string[] wear, glow;
         }
         public Preset[] presets;
+
+        /// <summary>A face type a random face rolls (hum_faces.FACE_TYPES): features that belong together, added to
+        /// the face sliders' means, and its odds per sex.</summary>
+        [Serializable] public class FaceType
+        {
+            public string name; public float masc, fem;
+            public PresetSlider[] sliders;
+
+            public float Mean(string slider)
+            {
+                if (sliders != null) foreach (var s in sliders) if (s.name == slider) return s.mean;
+                return 0f;
+            }
+        }
+        public FaceType[] faceTypes;
+
+        public FaceType FindFaceType(string name)
+        {
+            if (faceTypes != null) foreach (var t in faceTypes) if (t.name == name) return t;
+            return null;
+        }
 
         public Preset FindPreset(string name)
         {

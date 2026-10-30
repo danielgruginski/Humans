@@ -69,6 +69,29 @@ namespace Humans.EditorTools
             Debug.Log($"[HumanSetup] done: {PrefabPath} (showcase scene not rebuilt)");
         }
 
+        /// <summary>The showcase scene alone, from the prefab as it is: the scene keeps saved faces, and saved pieces whose
+        /// bone lists go stale when the fbx's skeleton grows (they draw nothing). It opens in Single mode, so it stops
+        /// unless the showcase is the only scene open, unsaved changes none.</summary>
+        [MenuItem("Tools/Humans/Rebuild Showcase Only")]
+        public static void RebuildShowcaseOnly()
+        {
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+            {
+                Debug.LogError("[HumanSetup] leave play mode first");
+                return;
+            }
+            var open = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+            if (UnityEngine.SceneManagement.SceneManager.sceneCount != 1 || open.isDirty || (open.path != ScenePath && open.path != ""))
+            {
+                Debug.LogError($"[HumanSetup] showcase not rebuilt: other work has scenes open ({open.path}, dirty {open.isDirty})");
+                return;
+            }
+            HumanFaceConfig.ClearCache();
+            HumanFace.ClearPieceCache();
+            BuildScene(AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath));
+            Debug.Log($"[HumanSetup] done: {ScenePath}");
+        }
+
         static GameObject RebuildPrefab()
         {
             HumanFaceConfig.ClearCache();
@@ -150,12 +173,77 @@ namespace Humans.EditorTools
             Set(mi.importLights, false, v => mi.importLights = v);
             Set(mi.meshCompression, ModelImporterMeshCompression.Off, v => mi.meshCompression = v);
             Set(mi.isReadable, false, v => mi.isReadable = v);
+            bool neck = body && UprightNeck(mi, path);
+            if (neck) changed = true;
             if (changed) mi.SaveAndReimport();
+            if (neck) ReimportAvatarClips();
             if (body)
             {
                 var avatar = AssetDatabase.LoadAllAssetsAtPath(path).OfType<Avatar>().FirstOrDefault();
                 Debug.Log($"[HumanSetup] avatar valid={avatar != null && avatar.isValid} human={avatar != null && avatar.isHuman}");
             }
+        }
+
+        /// <summary>How far the avatar's reference neck stands up from the rest skeleton's (degrees), the head turned back
+        /// as much so the face keeps its rest direction (2026-10-29, Daniel: "Isn't the neck too forward?"). The rest
+        /// skeleton's neck_01 leans ~25 deg forward of spine_03 (the head 24 deg back to keep the face level), and
+        /// Humanoid takes the avatar's reference pose as every muscle's zero: the bought clips nod the neck down and the
+        /// head up on top of it, so in idle/walk/run neck_01 -> head leaned 39-44 deg from vertical (20 at rest), the head
+        /// 9-11 cm ahead of the chest - a craned neck. With the reference neck 20 deg more upright the same clips give
+        /// 22-24 deg and 6-7 cm, the face's pitch unchanged (within 1 deg). Only the retargeting changes: the meshes, the
+        /// bind pose and our own clips (Human@*.fbx, read through this avatar and reimported with it by ConfigureClips)
+        /// keep their poses.</summary>
+        public const float NeckUpright = 20f;
+
+        /// <summary>The body's HumanDescription with neck_01 stood up by NeckUpright and the head turned back as much,
+        /// from the model's own rest rotations (so it never accumulates). True: it changed.</summary>
+        static bool UprightNeck(ModelImporter mi, string path)
+        {
+            var model = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            if (model == null) return false;
+            var all = model.GetComponentsInChildren<Transform>(true);
+            var neck = all.FirstOrDefault(t => t.name == "neck_01");
+            var head = all.FirstOrDefault(t => t.name == "head");
+            var hd = mi.humanDescription;
+            var sk = hd.skeleton;
+            if (neck == null || head == null || sk == null || sk.Length == 0) return false;
+            bool changed = false;
+            for (int i = 0; i < sk.Length; i++)
+            {
+                Quaternion want;
+                if (sk[i].name == "neck_01") want = neck.localRotation * Quaternion.Euler(-NeckUpright, 0, 0);
+                else if (sk[i].name == "head") want = Quaternion.Euler(NeckUpright, 0, 0) * head.localRotation;
+                else continue;
+                if (Quaternion.Angle(sk[i].rotation, want) > 0.01f) { sk[i].rotation = want; changed = true; }
+            }
+            if (!changed) return false;
+            hd.skeleton = sk;
+            mi.humanDescription = hd;
+            return true;
+        }
+
+        /// <summary>The upright neck on its own (no prefab rebuild): the body's avatar, then our clips reimported against it.</summary>
+        public static void ApplyUprightNeck() => ConfigureModel(BodyFbx, true);
+
+        /// <summary>Every clip FBX under Animation that reads its Humanoid pose through the body's avatar (ours from hum_anim,
+        /// and the riders' from hum_ride, which human_clips.json doesn't list), given the avatar again and reimported: its
+        /// muscles are measured against the avatar's reference pose, so they must follow a change to it or the pose
+        /// shifts. An importer keeps its own copy of the avatar's description, refreshed only when sourceAvatar is set
+        /// again (a plain reimport kept the old neck: the mammoth driver's moved 20 deg).</summary>
+        static void ReimportAvatarClips()
+        {
+            var avatar = AssetDatabase.LoadAllAssetsAtPath(BodyFbx).OfType<Avatar>().FirstOrDefault();
+            if (avatar == null) return;
+            int n = 0;
+            foreach (var guid in AssetDatabase.FindAssets("t:Model", new[] { Anim }))
+            {
+                var path = AssetDatabase.GUIDToAssetPath(guid);
+                if (!(AssetImporter.GetAtPath(path) is ModelImporter ci) || ci.sourceAvatar != avatar) continue;
+                ci.sourceAvatar = avatar;
+                ci.SaveAndReimport();
+                n++;
+            }
+            Debug.Log($"[HumanSetup] {n} clips reimported against the body's avatar");
         }
 
         struct Mats { public Material skin, eye, hair, body, cloth, leather, quilt, mail, plate, fur, plateRough, bone, feather, glow; }
@@ -380,8 +468,8 @@ namespace Humans.EditorTools
         [System.Serializable] class JKey { public string key; public JDelta[] bones; }
         [System.Serializable] class JRatios { public float tall, @short; }
         [System.Serializable] class JHelper { public string name, parent, source, drive, mate, baseBone, raiseOf, hang; public float f, fBack, fRaised, raiseFrom, raiseTo; }
-        [System.Serializable] class JSpring { public string[] bones; }
-        [System.Serializable] class JSkirtColumn { public string hip, knee, hem; public float side; }
+        [System.Serializable] class JSpring { public string[] bones; public string side; public float tip; }
+        [System.Serializable] class JSkirtColumn { public string hip, mid, knee, hem; public float side; }
         [System.Serializable] class JSkirt { public JSkirtColumn[] columns; public float raiseFrom, raiseTo; }
         [System.Serializable] class JWing { public string side; public string[] bones; }
         [System.Serializable] class JRig { public JBone[] bones; public JKey[] keys; public JRatios heightRatios; public string hipsBone; public JHelper[] helpers; public JSpring[] springs; public JSkirt[] skirts; public JWing[] wings; }
@@ -443,13 +531,14 @@ namespace Humans.EditorTools
                 var cols = new List<HumanSkirt.Column>();
                 foreach (var c in s.columns)
                 {
-                    Transform hip = B(c.hip), knee = B(c.knee), hem = B(c.hem);
-                    if (hip == null || knee == null || hem == null) { Debug.LogWarning($"[HumanSetup] skirt column {c.hip}: bones missing"); continue; }
+                    Transform hip = B(c.hip), mid = B(c.mid), knee = B(c.knee), hem = B(c.hem);
+                    if (hip == null || mid == null || knee == null || hem == null) { Debug.LogWarning($"[HumanSetup] skirt column {c.hip}: bones missing"); continue; }
                     cols.Add(new HumanSkirt.Column
                     {
-                        hip = hip, knee = knee, hem = hem,
-                        hipRest = hip.localRotation, kneeRest = knee.localRotation,
-                        hangHip = inv * (knee.position - hip.position).normalized,
+                        hip = hip, mid = mid, knee = knee, hem = hem,
+                        hipRest = hip.localRotation, midRest = mid.localRotation, kneeRest = knee.localRotation,
+                        hangHip = inv * (mid.position - hip.position).normalized,
+                        hangMid = inv * (knee.position - mid.position).normalized,
                         hangKnee = inv * (hem.position - knee.position).normalized,
                         kneeInThighL = tl.InverseTransformPoint(knee.position),
                         kneeInThighR = tr.InverseTransformPoint(knee.position),
@@ -470,8 +559,9 @@ namespace Humans.EditorTools
                 sk.colliders = new[]
                 {
                     // the legs' own size: the chain runs 3 cm outside them and a garment's slack says where its
-                    // cloth is beyond that (HumanSkirt)
-                    Cap("thigh_l", "calf_l", 0.055f), Cap("thigh_r", "calf_r", 0.055f),
+                    // cloth is beyond that (HumanSkirt); the thighs 1.5 cm over it, a buffer (2026-10-28, Daniel: thighs
+                    // through a tunic's front - a raised thigh reaches the cloth a little sooner; nothing moves at rest)
+                    Cap("thigh_l", "calf_l", 0.07f), Cap("thigh_r", "calf_r", 0.07f),
                     Cap("calf_l", "foot_l", 0.055f), Cap("calf_r", "foot_r", 0.055f),       // (boots are thick)
                     Cap("foot_l", "foot_l", 0.055f, Heel("foot_l")), Cap("foot_r", "foot_r", 0.055f, Heel("foot_r")),
                     Cap("foot_l", "ball_l", 0.05f), Cap("foot_r", "ball_r", 0.05f),
@@ -480,31 +570,53 @@ namespace Humans.EditorTools
             }
         }
 
-        /// <summary>HumanSpringChain per spring in human_rig.json (the cape): bind rotations, the tip extrapolated
-        /// from the last two links, collision capsules on the spine, pelvis and legs.</summary>
+        /// <summary>HumanSpringChain per spring in human_rig.json (the cape grid's columns): bind rotations, the tip on from
+        /// the last link (its length against the one before: `tip`), collision capsules on the spine, pelvis and legs, a side
+        /// column's arm pushing it straight back, and each column's neighbours across the back.</summary>
         static void AddSpringChains(GameObject root, Dictionary<string, Transform> boneMap)
         {
             var json = JsonUtility.FromJson<JRig>(File.ReadAllText(Path.GetFullPath(RigJson)));
+            var made = new List<HumanSpringChain>();
             foreach (var s in json.springs ?? new JSpring[0])
             {
                 var bones = s.bones.Select(b => boneMap.TryGetValue(b, out var t) ? t : null).ToArray();
                 if (bones.Length < 2 || bones.Any(b => b == null)) { Debug.LogWarning("[HumanSetup] spring chain: bones missing"); continue; }
                 var last = bones[bones.Length - 1];
-                var tipWorld = last.position + (last.position - bones[bones.Length - 2].position);
-                HumanSpringChain.Capsule Cap(string a, string b, float r) =>
-                    new HumanSpringChain.Capsule { a = boneMap.TryGetValue(a, out var ta) ? ta : null, b = boneMap.TryGetValue(b, out var tb) ? tb : null, radius = r };
+                var tipWorld = last.position + (last.position - bones[bones.Length - 2].position) * (s.tip > 0f ? s.tip : 1f);
+                HumanSpringChain.Capsule Cap(string a, string b, float r, bool torso = false, bool pushBack = false) =>
+                    new HumanSpringChain.Capsule { a = boneMap.TryGetValue(a, out var ta) ? ta : null, b = boneMap.TryGetValue(b, out var tb) ? tb : null,
+                                                   radius = r, torso = torso, pushBack = pushBack };
                 var chain = root.AddComponent<HumanSpringChain>();
                 chain.bones = bones;
                 chain.restLocal = bones.Select(b => b.localRotation).ToArray();
                 chain.tipLocal = last.InverseTransformPoint(tipWorld);
-                chain.colliders = new[]
+                var facing = root.GetComponentInChildren<Animator>(true)?.transform ?? root.transform;
+                var spine = Quaternion.Inverse(bones[0].parent.rotation);          // the bind pose, in spine_03's space
+                chain.restDirs = bones.Select((b, i) => spine * ((i + 1 < bones.Length ? bones[i + 1].position : tipWorld) - b.position).normalized).ToArray();
+                chain.upLocal = spine * Vector3.up;
+                chain.backLocal = spine * -facing.forward;
+                var caps = new List<HumanSpringChain.Capsule>
                 {
-                    Cap("spine_01", "neck_01", 0.13f), Cap("pelvis", "spine_01", 0.15f),
+                    Cap("spine_01", "neck_01", 0.13f, true), Cap("pelvis", "spine_01", 0.15f, true),
                     Cap("thigh_l", "calf_l", 0.09f), Cap("thigh_r", "calf_r", 0.09f),
                     Cap("calf_l", "foot_l", 0.065f), Cap("calf_r", "foot_r", 0.065f),
                 };
+                if (s.side == "l" || s.side == "r")                     // the arm on that side swings back under it (5 cm
+                    caps.AddRange(new[]                                 // over the limb: an elbow bent back in the combat
+                    {                                                   // stance passes the chain further out; +2 cm a buffer,
+                        Cap($"upperarm_{s.side}", $"lowerarm_{s.side}", 0.105f, pushBack: true),   // 2026-10-28)
+                        Cap($"lowerarm_{s.side}", $"hand_{s.side}", 0.095f, pushBack: true),
+                        Cap($"hand_{s.side}", $"middle_01_{s.side}", 0.095f, pushBack: true),
+                    });
+                chain.colliders = caps.ToArray();
+                made.Add(chain);
                 Debug.Log($"[HumanSetup] spring chain {string.Join(",", s.bones)}");
             }
+            // the columns across the back by their roots, each tied to the ones either side
+            var across = made.OrderBy(c => root.transform.InverseTransformPoint(c.bones[0].position).x).ToArray();
+            for (int i = 0; i < across.Length; i++)
+                across[i].neighbours = new[] { i > 0 ? across[i - 1] : null, i + 1 < across.Length ? across[i + 1] : null }
+                    .Where(c => c != null).ToArray();
         }
 
         /// <summary>HumanHelperBones on the prefab root, from human_rig.json's helpers; rest rotations read from
@@ -646,10 +758,12 @@ namespace Humans.EditorTools
             var clothRoot = new GameObject("Clothes").transform;
             clothRoot.SetParent(model.transform, false);
             var cut = new SortedDictionary<string, List<HumanPiece.Lod>>(System.StringComparer.Ordinal);
+            var fits = new Dictionary<string, HumanPiece.LimbFit[]>();   // a garment's thickness round the limbs (HumanClothPush)
             void Cut(SkinnedMeshRenderer smr, Material[] materials)
             {
                 int lod = LodOf(smr.name);
                 string piece = lod == 0 ? smr.name : smr.name.Substring(0, smr.name.LastIndexOf("_L", System.StringComparison.Ordinal));
+                if (lod == 0 && piece.StartsWith("Cloth_")) fits[piece] = HumanClothPush.Fit(smr, out _, out _);
                 if (!cut.TryGetValue(piece, out var lods)) cut[piece] = lods = new List<HumanPiece.Lod>();
                 while (lods.Count <= lod) lods.Add(new HumanPiece.Lod());
                 lods[lod] = new HumanPiece.Lod
@@ -687,7 +801,7 @@ namespace Humans.EditorTools
                 }
                 Object.DestroyImmediate(cloth);
             }
-            WritePieces(cut);
+            WritePieces(cut, fits);
 
             var all = model.GetComponentsInChildren<SkinnedMeshRenderer>(true);
             foreach (var smr in all)
@@ -707,7 +821,7 @@ namespace Humans.EditorTools
             };
             hf.bodies = bodies;
             hf.clothRoot = clothRoot;
-            hf.pieces = cut.Keys.ToArray();
+            hf.pieces = cut.Keys.Concat(HumanHairCardsSpike.PieceNames()).Distinct().ToArray();
             hf.modelRoot = model.transform;
             hf.animator = model.GetComponent<Animator>();
             // our clips are in place (height and XZ baked into the pose); only the turns carry root yaw, so root
@@ -720,6 +834,8 @@ namespace Humans.EditorTools
             AddSkirts(root, boneMap);
             AddWings(root, boneMap);
             AddClaws(root, boneMap);
+            // cloaks and skirts pushed off the limbs in the cloth shader (the bare body's thickness round them, here)
+            root.AddComponent<HumanClothPush>().Setup(n => boneMap.TryGetValue(n, out var t) ? t : null, bodies[0]);
             // hand sockets from the rest skeleton (and the shield's on the left forearm), then the stand-in props
             // shown while their states play
             var socketR = AddHandSocket(boneMap, "r");
@@ -759,7 +875,7 @@ namespace Humans.EditorTools
 
         /// <summary>one HumanPiece asset per piece in Resources/HumanPieces (updated in place, so references and
         /// .meta files stay); pieces the models no longer have are deleted</summary>
-        static void WritePieces(SortedDictionary<string, List<HumanPiece.Lod>> cut)
+        static void WritePieces(SortedDictionary<string, List<HumanPiece.Lod>> cut, Dictionary<string, HumanPiece.LimbFit[]> fits)
         {
             EnsureFolder(PieceDir);
             var keep = new HashSet<string>();
@@ -774,13 +890,15 @@ namespace Humans.EditorTools
                     bool fresh = asset == null;
                     if (fresh) asset = ScriptableObject.CreateInstance<HumanPiece>();
                     asset.lods = kv.Value.ToArray();
+                    asset.limbs = fits.TryGetValue(kv.Key, out var f) ? f : new HumanPiece.LimbFit[0];
                     if (fresh) AssetDatabase.CreateAsset(asset, path);
                     else EditorUtility.SetDirty(asset);
                 }
                 foreach (var guid in AssetDatabase.FindAssets("t:HumanPiece", new[] { PieceDir }))
                 {
                     var path = AssetDatabase.GUIDToAssetPath(guid);
-                    if (!keep.Contains(path)) AssetDatabase.DeleteAsset(path);
+                    // (the strand cards aren't these models': HumanHairCardsSpike.Install writes them)
+                    if (!keep.Contains(path) && !path.EndsWith("Strands.asset")) AssetDatabase.DeleteAsset(path);
                 }
             }
             finally { AssetDatabase.StopAssetEditing(); }

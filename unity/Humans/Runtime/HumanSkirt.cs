@@ -4,13 +4,18 @@ using UnityEngine;
 namespace Humans
 {
     /// <summary>
-    /// The skirt ring (xh_skirtNN_hip / _knee / _hem, hum_helpers.RING): columns round the hips, each a link from
-    /// the hips to just outside the knees and one on toward the hem. Their knee and hem points are Verlet points
-    /// pulled toward a target pose, with gravity, damping and collision capsules on the legs; the links then turn
-    /// to follow them. The target hangs in the character's frame; seated (both thighs raised) it follows the
+    /// The skirt ring (xh_skirtNN_hip / _mid / _knee / _hem, hum_helpers.RING): columns round the hips, each three
+    /// links - the hips to 40% of the way to just outside the knees, on to there, and on toward the hem (short at the
+    /// waist, longer down: 2026-10-28, Daniel: "skirts could also have at least 3 links"). Their mid, knee and hem points
+    /// are Verlet points pulled toward a target pose, with gravity, damping and collision capsules on the legs; the
+    /// links then turn to follow them. A leg pushes the hip and mid links as one, turning them round the hips (as the
+    /// one hip link they replaced), so the mid joint bends only by the cloth's own swing. The target hangs in the
+    /// character's frame; seated (both thighs raised) it follows the
     /// thighs - over the lap, the back tucked under them - and the points stiffen onto it. So a knee or a heel
     /// pushes only the cloth it reaches, and the rest hangs, swings and trails. (Rigid panels turning with the
-    /// thighs lifted whole quarters of a skirt when running.)
+    /// thighs lifted whole quarters of a skirt when running.) A push carries on as speed only by `kick`, and a heel
+    /// below the knee point moves that point too (`drape`): with neither, the back hem kicked out in a flap behind
+    /// every stride (2026-10-27). A run's stride is still longer than a long dress: running, it stands out behind.
     /// Runs after the Animator and HumanHelperBones, at a fixed 60 Hz (at most two steps a frame: a slow frame does not
     /// pile up more work for the next). HumanSetup fills it from human_rig.json; HumanFace enables it only while a
     /// garment with a skirt is worn. It rests while none of the character's skinned meshes is drawn (off screen and out
@@ -23,9 +28,9 @@ namespace Humans
         [Serializable]
         public struct Column
         {
-            public Transform hip, knee, hem;             // the links and the knee link's tip
-            public Quaternion hipRest, kneeRest;         // local rotations in the bind pose
-            public Vector3 hangHip, hangKnee;            // the links' bind directions in the facing transform's space
+            public Transform hip, mid, knee, hem;        // the links and the knee link's tip
+            public Quaternion hipRest, midRest, kneeRest; // local rotations in the bind pose
+            public Vector3 hangHip, hangMid, hangKnee;   // the links' bind directions in the facing transform's space
             public Vector3 kneeInThighL, kneeInThighR;   // the knee point in each thigh's space (bind pose)
             [Range(0f, 1f)] public float side;           // the left thigh's share of the column (seated)
         }
@@ -59,22 +64,33 @@ namespace Humans
         [Tooltip("How far the cloth below the knee may stretch (the feet in a running stride are further apart than a " +
                  "dress's hem is wide: rigid, the hem could only swing up round them)")]
         public float elastic = 1.35f;
-        [Tooltip("And the cloth from the hips to the knee (a raised knee stretches it forward rather than lifting the hem)")]
+        [Tooltip("And the cloth from the hips to the knee, each link (a raised knee stretches it forward rather than lifting the hem)")]
         public float elasticHip = 1.25f;
         [Tooltip("A leg's push carries the cloth up by this much of how far out it goes")]
         public float lift = 0.5f;          // (the chain runs 3 cm off the legs; a dress's hem has 2-3 times its girth)
+        [Range(0f, 1f), Tooltip("Share of a push (a leg, the links' lengths, the neighbours) the cloth keeps as speed: at 1 a heel's " +
+                                "push flung the cloth on past the heel, a back hem kicked out behind every stride")]
+        public float kick = 0.3f;
+        [Range(0f, 1f), Tooltip("Where a leg reaches the cloth below the knee point, the knee point takes this share of the push: the " +
+                                "cloth drapes over a heel instead of the hem swinging out round it (at 0, a heel just below the " +
+                                "knee point swung the hem out five times as far)")]
+        public float drape = 1f;
         public Capsule[] colliders = Array.Empty<Capsule>();
 
-        float[] slackHip = Array.Empty<float>(), slackKnee = Array.Empty<float>();
-        /// <summary>Per column, how far the worn skirt stands outside the hip / knee link (HumanFace fills them from
-        /// the garments): a leg pushes a column only once it reaches the cloth itself.</summary>
+        float[] slackHip = Array.Empty<float>(), slackMid = Array.Empty<float>(), slackKnee = Array.Empty<float>();
+        /// <summary>Per column, how far the worn skirt stands outside the hip / mid / knee link (HumanFace fills them
+        /// from the garments): a leg pushes a column only once it reaches the cloth itself.</summary>
         public float[] SlackHip { get { Fit(ref slackHip); return slackHip; } }
+        public float[] SlackMid { get { Fit(ref slackMid); return slackMid; } }
         public float[] SlackKnee { get { Fit(ref slackKnee); return slackKnee; } }
+        /// <summary>The cloth's slack where a leg pushes the hip and mid links: the mid link's, or a short skirt's (a
+        /// tunic's) at its hem on the hip link - the links below it carry that hem out</summary>
+        float SlackDown(int c) => SlackMid[c] < 0.5f ? SlackMid[c] : SlackHip[c];
         void Fit(ref float[] a) { if (a.Length != columns.Length) a = new float[columns.Length]; }
 
         const float Step = 1f / 60f;
-        Vector3[] p1, p1Prev, p2, p2Prev, t1, t2, root;
-        float[] len1, len2;
+        Vector3[] p1, p1Prev, p2, p2Prev, p3, p3Prev, t1, t2, t3, root, free1, free2, free3;
+        float[] len1, len2, len3;
         float acc;
         bool live;
 
@@ -85,11 +101,13 @@ namespace Humans
             foreach (var c in columns)
             {
                 if (c.hip != null) c.hip.localRotation = c.hipRest;
+                if (c.mid != null) c.mid.localRotation = c.midRest;
                 if (c.knee != null) { c.knee.localRotation = c.kneeRest; c.knee.localScale = Vector3.one; }
             }
             if (kneeRestPos != null)
                 for (int i = 0; i < columns.Length && i < kneeRestPos.Length; i++)
             {
+                if (columns[i].mid != null) columns[i].mid.localPosition = midRestPos[i];
                 if (columns[i].knee != null) columns[i].knee.localPosition = kneeRestPos[i];
             }
         }
@@ -126,9 +144,16 @@ namespace Humans
 
         void LateUpdate()
         {
+            if (columns.Length == 0 || facing == null) return;
+            if (!Drawn()) { live = false; return; }                     // unseen: rest (it starts afresh when seen)
+            Tick(Time.deltaTime);
+        }
+
+        /// <summary>a frame of dt seconds after the pose (LateUpdate's; a check tool's own clock)</summary>
+        public void Tick(float dt)
+        {
             int n = columns.Length;
             if (n == 0 || facing == null) return;
-            if (!Drawn()) { live = false; return; }                     // unseen: rest (it starts afresh when seen)
             if (capA.Length != colliders.Length) { capA = new Vector3[colliders.Length]; capB = new Vector3[colliders.Length]; }
             for (int i = 0; i < colliders.Length; i++)                   // the legs where the animation put them
             {
@@ -140,23 +165,26 @@ namespace Humans
             if (p1 == null || p1.Length != n)
             {
                 p1 = new Vector3[n]; p1Prev = new Vector3[n]; p2 = new Vector3[n]; p2Prev = new Vector3[n];
-                t1 = new Vector3[n]; t2 = new Vector3[n]; root = new Vector3[n];
-                len1 = new float[n]; len2 = new float[n];
+                p3 = new Vector3[n]; p3Prev = new Vector3[n];
+                t1 = new Vector3[n]; t2 = new Vector3[n]; t3 = new Vector3[n]; root = new Vector3[n];
+                free1 = new Vector3[n]; free2 = new Vector3[n]; free3 = new Vector3[n];
+                len1 = new float[n]; len2 = new float[n]; len3 = new float[n]; along = new float[n];
                 live = false;
             }
             // the bind pose on whatever the animation did to the pelvis, then the targets
             for (int c = 0; c < n; c++)
             {
                 columns[c].hip.localRotation = columns[c].hipRest;
+                columns[c].mid.localRotation = columns[c].midRest;
                 columns[c].knee.localRotation = columns[c].kneeRest;
                 columns[c].knee.localScale = Vector3.one;
             }
-            if (kneeRestPos == null || kneeRestPos.Length != n)            // the knee links' bind offsets on the hip links
+            if (kneeRestPos == null || kneeRestPos.Length != n)            // the mid and knee links' bind offsets on their parents
             {
-                kneeRestPos = new Vector3[n];
-                for (int c = 0; c < n; c++) kneeRestPos[c] = columns[c].knee.localPosition;
+                midRestPos = new Vector3[n]; kneeRestPos = new Vector3[n];
+                for (int c = 0; c < n; c++) { midRestPos[c] = columns[c].mid.localPosition; kneeRestPos[c] = columns[c].knee.localPosition; }
             }
-            for (int c = 0; c < n; c++) columns[c].knee.localPosition = kneeRestPos[c];
+            for (int c = 0; c < n; c++) { columns[c].mid.localPosition = midRestPos[c]; columns[c].knee.localPosition = kneeRestPos[c]; }
             if (kneeAxis == null || kneeAxis.Length != n)                  // each knee link's axis in its own space
             {
                 kneeAxis = new int[n];
@@ -172,37 +200,42 @@ namespace Humans
             var hips = Vector3.zero;
             for (int c = 0; c < n; c++) hips += columns[c].hip.position;
             hips /= n;
-            var slackHip = SlackHip;
             for (int c = 0; c < n; c++)
             {
                 var col = columns[c];
-                Vector3 p0 = col.hip.position, k0 = col.knee.position, h0 = col.hem.position;
-                float l1 = (k0 - p0).magnitude, l2 = (h0 - k0).magnitude;
+                Vector3 p0 = col.hip.position, m0 = col.mid.position, k0 = col.knee.position, h0 = col.hem.position;
+                float l1 = (m0 - p0).magnitude, l2 = (k0 - m0).magnitude, l3 = (h0 - k0).magnitude;
                 var a = p0 + fr * col.hangHip * l1;
-                var b = a + fr * col.hangKnee * l2;
+                var b = a + fr * col.hangMid * l2;
+                var e = b + fr * col.hangKnee * l3;
                 if (k > 0f)
                 {
                     var s = Vector3.Lerp(thighR.TransformPoint(col.kneeInThighR), thighL.TransformPoint(col.kneeInThighL), col.side);
                     // the cloth, not the chain, onto the thighs: turned with the link, the cloth's outward offset (its
                     // slack) stood a short skirt up over the lap like a tray. Aim so that offset lands on the point
-                    var rest = fr * col.hangHip;
+                    var rest = fr * (col.hangHip * l1 + col.hangMid * l2).normalized;
                     var turn = Quaternion.FromToRotation(rest, (s - p0).normalized);
                     var o = Vector3.ProjectOnPlane(p0 - hips, facing.up).normalized;
-                    if (slackHip[c] < 0.5f) s -= turn * o * slackHip[c];
-                    s = p0 + (s - p0).normalized * l1;
-                    a = Vector3.Lerp(a, s, k);
-                    b = Vector3.Lerp(b, s + fr * col.hangKnee * l2, k);
+                    float sl = SlackDown(c);
+                    if (sl < 0.5f) s -= turn * o * sl;
+                    var dir = (s - p0).normalized;
+                    s = p0 + dir * (l1 + l2);
+                    a = Vector3.Lerp(a, p0 + dir * l1, k);
+                    b = Vector3.Lerp(b, s, k);
+                    e = Vector3.Lerp(e, s + fr * col.hangKnee * l3, k);
                 }
-                root[c] = p0; t1[c] = a; t2[c] = b; len1[c] = l1; len2[c] = l2;
+                root[c] = p0; t1[c] = a; t2[c] = b; t3[c] = e; len1[c] = l1; len2[c] = l2; len3[c] = l3;
+                along[c] = l1 / Mathf.Max(l1 + l2, 1e-4f);
             }
             if (!live || (p1[0] - t1[0]).sqrMagnitude > 1f)              // first frame or a teleport
             {
                 Array.Copy(t1, p1, n); Array.Copy(t1, p1Prev, n);
                 Array.Copy(t2, p2, n); Array.Copy(t2, p2Prev, n);
+                Array.Copy(t3, p3, n); Array.Copy(t3, p3Prev, n);
                 acc = 0f;
                 live = true;
             }
-            acc = Mathf.Min(acc + Time.deltaTime, 2 * Step);
+            acc = Mathf.Min(acc + dt, 2 * Step);
             float stiff = Mathf.Lerp(stiffness, 1f, k);
             seated = k;
             while (acc >= Step)
@@ -214,19 +247,28 @@ namespace Humans
             for (int c = 0; c < n; c++)
             {
                 var col = columns[c];
-                var from = col.knee.position - root[c];
+                var from = col.mid.position - root[c];
                 var to = p1[c] - root[c];
                 if (from.sqrMagnitude > 1e-10f && to.sqrMagnitude > 1e-10f)
                 {
                     col.hip.rotation = Quaternion.FromToRotation(from, to) * col.hip.rotation;
-                    // the knee link slides out along it to its point: the cloth through the knee stretches instead of
-                    // the hip link swinging up to reach (a raised knee lifted the whole front hem)
+                    // the next link slides out along it to its point: the cloth stretches instead of the link
+                    // swinging up to reach (a raised knee lifted the whole front hem)
+                    float st = to.magnitude / from.magnitude;
+                    if (st > 1.001f) col.mid.localPosition = midRestPos[c] * st;
+                }
+                var mp = col.mid.position;
+                from = col.knee.position - mp;
+                to = p2[c] - mp;
+                if (from.sqrMagnitude > 1e-10f && to.sqrMagnitude > 1e-10f)
+                {
+                    col.mid.rotation = Quaternion.FromToRotation(from, to) * col.mid.rotation;
                     float st = to.magnitude / from.magnitude;
                     if (st > 1.001f) col.knee.localPosition = kneeRestPos[c] * st;
                 }
                 var kp = col.knee.position;
                 from = col.hem.position - kp;
-                to = p2[c] - kp;
+                to = p3[c] - kp;
                 if (from.sqrMagnitude > 1e-10f && to.sqrMagnitude > 1e-10f)
                 {
                     col.knee.rotation = Quaternion.FromToRotation(from, to) * col.knee.rotation;
@@ -245,7 +287,8 @@ namespace Humans
 
         float seated;
         int[] kneeAxis;
-        Vector3[] kneeRestPos;
+        Vector3[] midRestPos, kneeRestPos;
+        float[] along;                                                  // the mid joint's place from the hips to the knee point
 
         void Simulate(int n, float stiff)
         {
@@ -254,6 +297,8 @@ namespace Humans
             {
                 Integrate(ref p1[c], ref p1Prev[c], t1[c], g, stiff);
                 Integrate(ref p2[c], ref p2Prev[c], t2[c], g, stiff);
+                Integrate(ref p3[c], ref p3Prev[c], t3[c], g, stiff);
+                free1[c] = p1[c]; free2[c] = p2[c]; free3[c] = p3[c];
             }
             // each column's outward direction round the hips (level): the way a leg pushes that cloth
             var up = facing.up;
@@ -264,17 +309,14 @@ namespace Humans
             {
                 for (int c = 0; c < n; c++)
                 {
-                    var o = Vector3.ProjectOnPlane(t1[c] - centre, up).normalized;
-                    // both links are elastic (they stretch rather than swing up round a leg), never shorter
+                    // the links are elastic (they stretch rather than swing up round a leg), never shorter
                     var d1 = p1[c] - root[c];
                     p1[c] = root[c] + Dir(d1, t1[c] - root[c]) * Mathf.Clamp(d1.magnitude, len1[c], len1[c] * elasticHip);
                     var d2 = p2[c] - p1[c];
-                    p2[c] = p1[c] + Dir(d2, t2[c] - t1[c]) * Mathf.Clamp(d2.magnitude, len2[c], len2[c] * elastic);
-                    // and stay off the legs: the hip link first (the knee link rides its push), then the knee link
-                    var before = p1[c];
-                    Collide(root[c], ref p1[c], t1[c] - root[c], o, 0.6f, SlackHip[c], centre, up, 1f - seated);
-                    p2[c] += p1[c] - before;
-                    Collide(p1[c], ref p2[c], t2[c] - t1[c], o, 0.2f, SlackKnee[c], centre, up, 1f - seated);
+                    p2[c] = p1[c] + Dir(d2, t2[c] - t1[c]) * Mathf.Clamp(d2.magnitude, len2[c], len2[c] * elasticHip);
+                    var d3 = p3[c] - p2[c];
+                    p3[c] = p2[c] + Dir(d3, t3[c] - t2[c]) * Mathf.Clamp(d3.magnitude, len3[c], len3[c] * elastic);
+                    StayOff(c, centre, up);
                 }
                 // the cloth between neighbouring columns doesn't stretch: a column a knee pushes drags its
                 // neighbours along (a tent over the knee, not a slit beside it)
@@ -283,17 +325,36 @@ namespace Humans
                     int d = (c + 1) % n;
                     Limit(ref p1[c], ref p1[d], (t1[c] - t1[d]).magnitude * stretch);
                     Limit(ref p2[c], ref p2[d], (t2[c] - t2[d]).magnitude * stretch);
+                    Limit(ref p3[c], ref p3[d], (t3[c] - t3[d]).magnitude * stretch);
                 }
             }
             // the legs have the last word (the neighbours' pull had drawn a pushed column back into the heel)
+            for (int c = 0; c < n; c++) StayOff(c, centre, up);
+            // what the constraints moved the points by carries on as speed only by `kick`: Verlet keeps every move as
+            // velocity, so a heel's push flung the cloth on out past the heel
             for (int c = 0; c < n; c++)
             {
-                var o = Vector3.ProjectOnPlane(t1[c] - centre, up).normalized;
-                var before = p1[c];
-                Collide(root[c], ref p1[c], t1[c] - root[c], o, 0.6f, SlackHip[c], centre, up, 1f - seated);
-                p2[c] += p1[c] - before;
-                Collide(p1[c], ref p2[c], t2[c] - t1[c], o, 0.2f, SlackKnee[c], centre, up, 1f - seated);
+                p1Prev[c] += (p1[c] - free1[c]) * (1f - kick);
+                p2Prev[c] += (p2[c] - free2[c]) * (1f - kick);
+                p3Prev[c] += (p3[c] - free3[c]) * (1f - kick);
             }
+        }
+
+        /// <summary>Column c off the legs: the hips to the knee point first, as one link turning round the hips (the mid
+        /// point and the knee link ride its push), then the knee link (its start taking `drape` of a push, the mid point
+        /// riding along)</summary>
+        void StayOff(int c, Vector3 centre, Vector3 up)
+        {
+            var o = Vector3.ProjectOnPlane(t1[c] - centre, up).normalized;
+            var before = p2[c];
+            var fixedRoot = root[c];
+            Collide(ref fixedRoot, 0f, ref p2[c], t2[c] - root[c], o, 0.6f, SlackDown(c), centre, up, 1f - seated);
+            var moved = p2[c] - before;
+            p1[c] += moved * along[c];
+            p3[c] += moved;
+            before = p2[c];
+            Collide(ref p2[c], drape, ref p3[c], t3[c] - t2[c], o, 0.2f, SlackKnee[c], centre, up, 1f - seated);
+            p1[c] += (p2[c] - before) * along[c];
         }
 
         static void Limit(ref Vector3 a, ref Vector3 b, float max)
@@ -318,15 +379,17 @@ namespace Humans
             d.sqrMagnitude > 1e-10f ? d.normalized : fallback.normalized;
 
         /// <summary>Keep the cloth of column c's link a -> tip outside the legs. Each column owns a slice of the ring
-        /// (360 / n degrees round the hips); for three points from `from` to the tip (the hip link only from 0.6
+        /// (360 / n degrees round the hips); for three points from `from` to the tip (the hips to the knee point only from 0.6
         /// down: its top sits on the flesh the thigh capsule's top overlaps), a leg capsule's nearest point at that
         /// height inside the slice (fading out over `fade` past it) reaches out along o, the column's outward
         /// direction, to its distance + radius: the cloth there (the point + the garment's slack) must reach
         /// further, or the point moves out along o - the tip by that push / t. One-sided and by slice, so a shin a
         /// heel strike swung past the hem in one frame, or a heel kicked up between two columns, still pushes the
         /// cloth out (a leg pushed straight out from its axis parted two columns and came out between them; a
-        /// point test missed a heel between two columns).</summary>
-        void Collide(Vector3 a, ref Vector3 tip, Vector3 hang, Vector3 o, float from, float slack, Vector3 centre, Vector3 up, float scale)
+        /// point test missed a heel between two columns). With `share` the link's start point takes part of the push
+        /// too, as much more as the reach is nearer it (the knee link: the cloth drapes over a heel); without, only the
+        /// tip moves (the hips to the knee point, from its fixed root).</summary>
+        void Collide(ref Vector3 a, float share, ref Vector3 tip, Vector3 hang, Vector3 o, float from, float slack, Vector3 centre, Vector3 up, float scale)
         {
             if (scale <= 0f) return;
             float slice = Mathf.Tan(Mathf.PI / Mathf.Max(columns.Length, 3));
@@ -365,7 +428,11 @@ namespace Humans
                     // out, and up by `lift` of that: the leg catches the cloth and carries it up over itself (the feet
                     // in a running stride are further apart than the hem is wide: it has to rise, not only stretch)
                     var push = (o + up * lift) * ((reach - cloth) * k * scale);
-                    tip += push / t;
+                    // the point at t moves by the push: split between the ends by their weights there (a fixed start:
+                    // the tip alone, by push / t)
+                    float wa = share * (1f - t), den = wa * (1f - t) + t * t;
+                    a += push * (wa / den);
+                    tip += push * (t / den);
                     q += push;
                 }
             }

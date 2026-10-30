@@ -1,0 +1,217 @@
+// A cloak simulated on the GPU (HumanClothSim, spike D, 2026-10-28). The cloak as skinned (its own bones, the cape's
+// chains among them) is the target: each particle (a welded vertex) follows it with a damped offset, keeps the
+// target's own edge and bend lengths (Jacobi), stays within its max distance of it (0 on the body, more down the
+// cape), and is pushed out of the limbs' and held props' capsules (the cape only) and off the worn layers under it
+// (nearest skinned point of a layer: shirt, tunic, the body where it shows; kept _Gap in front of it). Positions are
+// world space; Humans/Cloth reads _Out (position, normal per mesh vertex) in place of its skinned vertex.
+
+#pragma kernel SkinCloth
+#pragma kernel SkinLayer
+#pragma kernel Begin
+#pragma kernel Integrate
+#pragma kernel Links
+#pragma kernel Collide
+#pragma kernel Normals
+#pragma kernel Output
+
+#define G 64
+
+StructuredBuffer<float4x4> _Bones;          // bone.localToWorld * bindpose (the cloak's, then each layer's)
+
+StructuredBuffer<float4> _Rest;             // xyz rest (mesh space), w max distance (m)
+StructuredBuffer<float4> _RestN;            // xyz rest normal, w capsule factor (0 rides the body .. 1 hangs)
+StructuredBuffer<int4> _SkinI;
+StructuredBuffer<float4> _SkinW;
+RWStructuredBuffer<float4> _Target;         // skinned this frame
+RWStructuredBuffer<float4> _TargetPrev;     // skinned last frame
+RWStructuredBuffer<float4> _TargetN;
+RWStructuredBuffer<float4> _Pos;            // the particles
+RWStructuredBuffer<float4> _Pos2;           // Jacobi's other buffer
+RWStructuredBuffer<float4> _Off;            // offset from the target at the last substep
+RWStructuredBuffer<int> _Near;              // nearest layer point (-1: none in reach)
+StructuredBuffer<int> _LinkStart;           // particle i's links: [start[i], start[i + 1])
+StructuredBuffer<int> _LinkOther;
+StructuredBuffer<float> _LinkW;
+StructuredBuffer<int> _TriStart;            // particle i's triangles: [start[i], start[i + 1])
+StructuredBuffer<int> _TriList;
+StructuredBuffer<int> _Tris;                // 3 particles a triangle
+RWStructuredBuffer<float4> _Normal;
+StructuredBuffer<int> _VertParticle;        // mesh vertex -> particle
+RWStructuredBuffer<float4> _Out;            // 2 a mesh vertex: position, normal
+
+StructuredBuffer<float4> _LRest;            // layer points: xyz rest (their mesh space)
+StructuredBuffer<float4> _LRestN;
+StructuredBuffer<int4> _LSkinI;             // into _Bones (offset past the cloak's)
+StructuredBuffer<float4> _LSkinW;
+RWStructuredBuffer<float4> _LPos;
+RWStructuredBuffer<float4> _LNrm;
+
+StructuredBuffer<float4> _Caps;             // 4 a capsule: a now, b now, a last frame, b last frame (xyz, w radius)
+
+uint _N, _NV, _NL, _NC;
+float _S0, _S1;                             // the substep's start and end between last frame's target and this one's
+float _Damp, _Stiff, _Omega, _Gap, _Deep, _Reach, _Skin, _NormalSign;
+uint _First;
+
+float3 Skin(float3 p, int4 i, float4 w)
+{
+    float3 r = w.x * mul(_Bones[i.x], float4(p, 1)).xyz;
+    if (w.y > 0) r += w.y * mul(_Bones[i.y], float4(p, 1)).xyz;
+    if (w.z > 0) r += w.z * mul(_Bones[i.z], float4(p, 1)).xyz;
+    if (w.w > 0) r += w.w * mul(_Bones[i.w], float4(p, 1)).xyz;
+    return r;
+}
+
+float3 SkinN(float3 n, int4 i, float4 w)
+{
+    float3 r = w.x * mul((float3x3)_Bones[i.x], n);
+    if (w.y > 0) r += w.y * mul((float3x3)_Bones[i.y], n);
+    if (w.z > 0) r += w.z * mul((float3x3)_Bones[i.z], n);
+    if (w.w > 0) r += w.w * mul((float3x3)_Bones[i.w], n);
+    return normalize(r);
+}
+
+[numthreads(G, 1, 1)]
+void SkinCloth(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    if (i >= _N) return;
+    float3 t = Skin(_Rest[i].xyz, _SkinI[i], _SkinW[i]);
+    _TargetPrev[i] = _First ? float4(t, 1) : _Target[i];
+    _Target[i] = float4(t, 1);
+    _TargetN[i] = float4(SkinN(_RestN[i].xyz, _SkinI[i], _SkinW[i]), 0);
+}
+
+[numthreads(G, 1, 1)]
+void SkinLayer(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    if (i >= _NL) return;
+    _LPos[i] = float4(Skin(_LRest[i].xyz, _LSkinI[i], _LSkinW[i]), 1);
+    _LNrm[i] = float4(SkinN(_LRestN[i].xyz, _LSkinI[i], _LSkinW[i]), 0);
+}
+
+// the frame's start: a first frame starts on the target; each particle finds its nearest layer point
+[numthreads(G, 1, 1)]
+void Begin(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    if (i >= _N) return;
+    if (_First) { _Pos[i] = _Target[i]; _Off[i] = 0; }
+    float3 x = _Pos[i].xyz + (_Target[i].xyz - _TargetPrev[i].xyz);
+    int best = -1;
+    float bd = _Reach * _Reach;
+    for (uint k = 0; k < _NL; k++)
+    {
+        float3 d = _LPos[k].xyz - x;
+        float dd = dot(d, d);
+        if (dd < bd) { bd = dd; best = (int)k; }
+    }
+    _Near[i] = best;
+}
+
+// a damped offset from the target, eased back to it
+[numthreads(G, 1, 1)]
+void Integrate(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    if (i >= _N) return;
+    float3 tA = lerp(_TargetPrev[i].xyz, _Target[i].xyz, _S0);
+    float3 tB = lerp(_TargetPrev[i].xyz, _Target[i].xyz, _S1);
+    float3 off = _Pos[i].xyz - tA;
+    float3 v = off - _Off[i].xyz;
+    _Off[i] = float4(off, 0);
+    float3 o = off + v * (1 - _Damp);
+    o -= o * _Stiff;
+    _Pos[i] = float4(tB + o, 1);
+}
+
+// the target's own edge and bend lengths (Jacobi: reads _Pos, writes _Pos2)
+[numthreads(G, 1, 1)]
+void Links(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    if (i >= _N) return;
+    float3 x = _Pos[i].xyz;
+    float3 ti = _Target[i].xyz;
+    float3 acc = 0;
+    float ws = 0;
+    for (int k = _LinkStart[i]; k < _LinkStart[i + 1]; k++)
+    {
+        int j = _LinkOther[k];
+        float w = _LinkW[k];
+        float L = length(_Target[j].xyz - ti);
+        float3 d = _Pos[j].xyz - x;
+        float l = length(d);
+        if (l > 1e-6) acc += w * 0.5 * (l - L) * (d / l);
+        ws += w;
+    }
+    _Pos2[i] = float4(x + _Omega * acc / max(ws, 1e-6), 1);
+}
+
+float3 Capsule(float3 x, float4 a, float4 b, float skin)
+{
+    float3 ab = b.xyz - a.xyz;
+    float t = saturate(dot(x - a.xyz, ab) / max(dot(ab, ab), 1e-8));
+    float3 c = a.xyz + ab * t;
+    float3 d = x - c;
+    float l = length(d);
+    float r = lerp(a.w, b.w, t) + skin;
+    return l < r && l > 1e-6 ? c + d * (r / l) : x;
+}
+
+// max distance from the target, then out of the capsules and off the layers (these win)
+[numthreads(G, 1, 1)]
+void Collide(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    if (i >= _N) return;
+    float3 t = lerp(_TargetPrev[i].xyz, _Target[i].xyz, _S1);
+    float3 x = _Pos[i].xyz;
+    float md = _Rest[i].w;
+    float3 d = x - t;
+    float l = length(d);
+    if (l > md) x = t + d * (md / max(l, 1e-6));
+    if (_RestN[i].w > 0.5)
+        for (uint c = 0; c < _NC; c++)
+        {
+            float4 a = lerp(_Caps[c * 4 + 2], _Caps[c * 4], _S1);
+            float4 b = lerp(_Caps[c * 4 + 3], _Caps[c * 4 + 1], _S1);
+            x = Capsule(x, a, b, _Skin);
+        }
+    int n = _Near[i];
+    if (n >= 0)
+    {
+        float3 p = _LPos[n].xyz, nn = _LNrm[n].xyz;
+        float s = dot(x - p, nn);
+        if (s < _Gap && s > -_Deep) x += nn * (_Gap - s);
+    }
+    _Pos[i] = float4(x, 1);
+}
+
+[numthreads(G, 1, 1)]
+void Normals(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    if (i >= _N) return;
+    float3 n = 0;
+    for (int k = _TriStart[i]; k < _TriStart[i + 1]; k++)
+    {
+        int f = _TriList[k] * 3;
+        float3 a = _Pos[_Tris[f]].xyz, b = _Pos[_Tris[f + 1]].xyz, c = _Pos[_Tris[f + 2]].xyz;
+        n += cross(b - a, c - a);
+    }
+    float l = length(n);
+    n = l > 1e-12 ? n * (_NormalSign / l) : _TargetN[i].xyz;
+    _Normal[i] = float4(dot(n, _TargetN[i].xyz) < 0 ? -n : n, 0);   // a face wound the other way doesn't flip it
+}
+
+[numthreads(G, 1, 1)]
+void Output(uint3 id : SV_DispatchThreadID)
+{
+    uint v = id.x;
+    if (v >= _NV) return;
+    int p = _VertParticle[v];
+    _Out[v * 2] = _Pos[p];
+    _Out[v * 2 + 1] = _Normal[p];
+}

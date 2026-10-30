@@ -6,11 +6,11 @@ takes part of the weights around it:
 
     xh_deltoid_l/r  at the shoulder joint, child of the clavicle, turns HALF as far as the upper arm
     xh_glute_l/r    at the hip joint, child of the pelvis, turns half as far as the thigh (tassets too)
-    xh_skirtNN_hip  the skirt ring: 12 columns round the hips, each a link from the hips to just outside the
-    xh_skirtNN_knee knees and one on down toward the hem. Unity's HumanSkirt simulates them (they hang, the legs
-                    push them, they swing and trail); here they hang, or follow the thighs seated. (Rigid panels
-                    turning with the thighs lifted whole quarters of a skirt when running - Daniel: "a weird
-                    movement that does not exist in real life")
+    xh_skirtNN_hip  the skirt ring: 12 columns round the hips, each three links - the hips to 40% of the way to
+    xh_skirtNN_mid  just outside the knees, on to there, and on down toward the hem (short at the waist, longer
+    xh_skirtNN_knee down). Unity's HumanSkirt simulates them (they hang, the legs push them, they swing and trail);
+                    here they hang, or follow the thighs seated. (Rigid panels turning with the thighs lifted whole
+                    quarters of a skirt when running - Daniel: "a weird movement that does not exist in real life")
 
 Runtime: Unity's HumanHelperBones drives them after the Animator (any Humanoid clip works - Humanoid never
 touches bones outside the avatar); hum_anim drives them the same way for our Blender previews.
@@ -32,17 +32,31 @@ HELPERS = {
     "xh_deltoid_r": dict(parent="clavicle_r", host="upperarm_r", drive="share", source="upperarm_r", f=0.5),
     "xh_glute_l": dict(parent="pelvis", host="thigh_l", drive="share", source="thigh_l", f=0.5),
     "xh_glute_r": dict(parent="pelvis", host="thigh_r", drive="share", source="thigh_r", f=0.5),
-    # the cape chain: down the back of a cloak / cape, from between the shoulder blades to the hem; simulated
-    # at runtime (Unity HumanSpringChain), rigid on the spine in Blender. Each node rides a spine joint plus a
-    # fixed offset (so it moves with that joint's per-build offset); head -> the next node.
-    "xh_cape_0": dict(parent="spine_03", host="spine_03", head_off=(0.0, 0.123, 0.112),
-                      tail=("spine_01", (0.0, 0.237, -0.018)), drive="spring"),
-    "xh_cape_1": dict(parent="xh_cape_0", host="spine_01", head_off=(0.0, 0.237, -0.018),
-                      tail=("pelvis", (0.0, 0.343, -0.224)), drive="spring"),
-    "xh_cape_2": dict(parent="xh_cape_1", host="pelvis", head_off=(0.0, 0.343, -0.224),
-                      tail=("pelvis", (0.0, 0.363, -0.504)), drive="spring"),
 }
-CAPE = ["xh_cape_0", "xh_cape_1", "xh_cape_2"]
+# the cape grid: simulated at runtime (Unity HumanSpringChain, one per column), rigid on the spine in Blender. Five
+# columns down the back of a cloak / cape - the middle, 12 cm and 24 cm out each side - each four links from the top of
+# the shoulder blades, short at the top and longer down (16, 18, 24, 30 cm; 2026-10-28, Daniel: "any chance we could
+# increase the number of bones"; three links had bent as straight boards). Each node rides a spine joint plus a fixed
+# offset (so it moves with that joint's per-build offset), on the Cloak's back line a little inside (the builds' mean at
+# rest after the 2026-10-27 re-cut: on the shoulder blades, over the seat, near vertical below); head -> the next node.
+# The second node is at elbow height. The outer columns are where the hands pass (the game's clips hang them 26-29 cm
+# out and swing them up to 12 cm (men) / 29 cm (women) behind the root at a walk, an elbow further back in the combat
+# stance): a side column's arm pushes it straight back (Daniel: "when the arm swings backwards it clips over the cloak")
+_CAPE_HOSTS = ("spine_03", "spine_03", "spine_01", "pelvis", "pelvis")
+_CAPE_Z = (0.172, 0.012, -0.038, -0.204, -0.504)                    # off the hosts: 1.18, 1.02, 0.84, 0.60, 0.30 at rest
+_CAPE_Y = {0.0: (0.141, 0.139, 0.157, 0.242, 0.281), 0.12: (0.146, 0.157, 0.154, 0.231, 0.272),
+           0.24: (0.108, 0.125, 0.123, 0.180, 0.215)}
+CAPE_COLUMNS = []                                                   # {bones, x, side}, the middle first
+for _name, _x, _sd in (("xh_cape", 0.0, ""), ("xh_cape_lm", 0.12, "l"), ("xh_cape_l", 0.24, "l"),
+                       ("xh_cape_rm", -0.12, "r"), ("xh_cape_r", -0.24, "r")):
+    _ys = _CAPE_Y[abs(_x)]
+    _bones = [f"{_name}_{_i}" for _i in range(len(_CAPE_HOSTS) - 1)]
+    for _i, _n in enumerate(_bones):
+        HELPERS[_n] = dict(parent="spine_03" if _i == 0 else _bones[_i - 1], host=_CAPE_HOSTS[_i],
+                           head_off=(_x, _ys[_i], _CAPE_Z[_i]),
+                           tail=(_CAPE_HOSTS[_i + 1], (_x, _ys[_i + 1], _CAPE_Z[_i + 1])), drive="spring")
+    CAPE_COLUMNS.append(dict(bones=_bones, x=_x, side=_sd))
+CAPE = CAPE_COLUMNS[0]["bones"]
 
 # the wings (2026-10-23, the demons', imps' and angels' - hum_wings): per side a chain off spine_03, root over the
 # shoulder blade -> elbow -> wrist -> hand, at the wing garments' joints measured on the Slim build (offsets from
@@ -78,13 +92,23 @@ RING = [
 ]
 RING_RAISE = (45.0, 70.0)            # both thighs raised this far (deg, the less raised one): seated - the ring
                                      # follows the thighs (over the lap, the back tucked under them)
-SKIRT_RING = [(f"xh_skirt{k:02d}_hip", f"xh_skirt{k:02d}_knee") for k in range(len(RING))]
+# the mid joint between the hip pivot and the knee point, 40% of the way down (as an offset from the thigh on the
+# column's side): the links 14 / 22 / 32 cm in front, 13 / 19 / 32 cm behind (2026-10-28, Daniel: "skirts could also
+# have at least 3 links, with different sizes, the links closer to the waist are smaller")
+RING_MID = [(-0.0933, -0.1156, -0.1438), (-0.0362, -0.1108, -0.1459), (0.0388, -0.0882, -0.1513),
+            (0.0882, -0.0119, -0.1588), (0.0310, 0.0598, -0.1663), (-0.0424, 0.0763, -0.1719),
+            (-0.0933, 0.0787, -0.1738), (0.0424, 0.0763, -0.1719), (-0.0310, 0.0598, -0.1663),
+            (-0.0882, -0.0119, -0.1588), (-0.0388, -0.0882, -0.1513), (0.0362, -0.1108, -0.1459)]
+SKIRT_RING = [(f"xh_skirt{k:02d}_hip", f"xh_skirt{k:02d}_mid", f"xh_skirt{k:02d}_knee") for k in range(len(RING))]
 SKIRT_HEM = [f"xh_skirt{k:02d}_hem" for k in range(len(RING))]     # weightless leaf: the knee link's tip for Unity
 for _k, (_deg, _piv, _host, _knee, _hem) in enumerate(RING):
-    _a, _b = SKIRT_RING[_k]
-    HELPERS[_a] = dict(parent="pelvis", host="pelvis", head_off=_piv, tail=(_host, _knee), drive="ring",
+    _a, _m, _b = SKIRT_RING[_k]
+    _th = "thigh_" + _host[-1]
+    HELPERS[_a] = dict(parent="pelvis", host="pelvis", head_off=_piv, tail=(_th, RING_MID[_k]), drive="ring",
                        source="pelvis", f=0.0, column=_k)
-    HELPERS[_b] = dict(parent=_a, host=_host, head_off=_knee, tail=(_host, _hem), drive="ring",
+    HELPERS[_m] = dict(parent=_a, host=_th, head_off=RING_MID[_k], tail=(_host, _knee), drive="ring",
+                       source="pelvis", f=0.0, column=_k)
+    HELPERS[_b] = dict(parent=_m, host=_host, head_off=_knee, tail=(_host, _hem), drive="ring",
                        source="pelvis", f=0.0, column=_k)
     HELPERS[SKIRT_HEM[_k]] = dict(parent=_b, host=_host, head_off=_hem,
                                   tail=(_host, (_hem[0], _hem[1], _hem[2] - 0.05)), drive="ring", source="pelvis",
@@ -93,25 +117,25 @@ for _k, (_deg, _piv, _host, _knee, _hem) in enumerate(RING):
 
 def ring_slack(ob, joints):
     """How far a garment's hanging cloth stands outside each ring column (m, rest space), for the hip link (at
-    knee height, or just above the cloth's hem if it's shorter) and the knee link (at the hem point's height):
-    HumanSkirt lets a leg push a column only once it reaches the cloth itself (pushed from 3 cm off the legs, a
-    wide dress swung out long before a knee reached it, and further). 1.0 where no cloth hangs there."""
+    the mid joint's height), the mid link (at knee height) and the knee link (at the hem point's height; each just
+    above the cloth's hem if it's shorter): HumanSkirt lets a leg push a column only once it reaches the cloth itself
+    (pushed from 3 cm off the legs, a wide dress swung out long before a knee reached it, and further). 1.0 where no
+    cloth hangs there."""
     import math
     P = np.array([v.co[:] for v in ob.data.vertices])
     Q = P[hanging_mask(ob)]
-    out = ([], [])
+    out = ([], [], [])
     if not len(Q):
-        return [1.0] * len(RING), [1.0] * len(RING)
+        return [1.0] * len(RING), [1.0] * len(RING), [1.0] * len(RING)
     knee_y = 0.5 * (joints["calf_l"][1] + joints["calf_r"][1])
-    knee_z = 0.5 * (joints["calf_l"][2] + joints["calf_r"][2])
     zmin = Q[:, 2].min()
     az = np.degrees(np.arctan2(Q[:, 0], -(Q[:, 1] - knee_y)))
-    for k, (hip, knee) in enumerate(SKIRT_RING):
-        piv, kp, hp = (np.asarray(joints[n], float) for n in (hip, knee, SKIRT_HEM[k]))
+    for k, names in enumerate(SKIRT_RING):
+        piv, mp, kp, hp = (np.asarray(joints[n], float) for n in names + (SKIRT_HEM[k],))
         a = math.radians(RING[k][0])
         u = np.array([math.sin(a), -math.cos(a)])
         near = np.abs((az - RING[k][0] + 180.0) % 360.0 - 180.0) < 20.0
-        for j, (A, B, lo) in enumerate(((piv, kp, knee_z), (kp, hp, hp[2]))):
+        for j, (A, B, lo) in enumerate(((piv, mp, mp[2]), (mp, kp, kp[2]), (kp, hp, hp[2]))):
             z = max(lo, zmin + 0.03)
             band = near & (np.abs(Q[:, 2] - z) < 0.03)
             if z > A[2] - 0.05 or not band.any():                # no cloth along this link
@@ -125,13 +149,20 @@ def ring_slack(ob, joints):
 
 def sync_bones(arm):
     """Add the helper bones missing from the armature (rest joints from its own bones), remove xh_ bones no
-    longer in HELPERS. Edit mode on the armature; returns (added, removed)."""
+    longer in HELPERS, and move offset helpers (head_off) whose offsets or parent changed (the cape chain,
+    2026-10-27; the skirt's mid links, 2026-10-28: a skinned mesh keeps its rest shape; Unity needs the body and
+    every family weighted to them re-exported). Edit mode on the armature; returns (added, removed, moved)."""
     import bpy
     joints = {b.name: np.array(b.head_local) for b in arm.data.bones}
+    tails = {b.name: np.array(b.tail_local) for b in arm.data.bones}
+    parents = {b.name: b.parent.name if b.parent else "" for b in arm.data.bones}
     add = [n for n in HELPERS if n not in joints]
     rem = [b.name for b in arm.data.bones if b.name.startswith("xh_") and b.name not in HELPERS]
-    if not add and not rem:
-        return [], []
+    mov = [n for n, h in HELPERS.items() if n in joints and "head_off" in h
+           and (np.abs(joints[n] - node(joints, h)).max() > 1e-4 or np.abs(tails[n] - node(joints, h, "tail")).max() > 1e-4
+                or parents[n] != h["parent"])]
+    if not add and not rem and not mov:
+        return [], [], []
     vl = bpy.context.view_layer
     vl.objects.active = arm
     with bpy.context.temp_override(active_object=arm, object=arm):
@@ -139,6 +170,10 @@ def sync_bones(arm):
         eb = arm.data.edit_bones
         for n in rem:
             eb.remove(eb[n])
+        for n in mov:
+            eb[n].head = Vector(node(joints, HELPERS[n], "head"))
+            eb[n].tail = Vector(node(joints, HELPERS[n], "tail"))
+            eb[n].roll = 0.0
         for n in add:                                   # parents first: HELPERS lists them in order
             h = HELPERS[n]
             b = eb.new(n)
@@ -148,8 +183,12 @@ def sync_bones(arm):
             b.parent = eb[h["parent"]]
             b.use_connect = False
             joints[n] = np.array(b.head)
+        for n in mov:                                   # (a new parent exists by now)
+            if eb[n].parent is None or eb[n].parent.name != HELPERS[n]["parent"]:
+                eb[n].use_connect = False
+                eb[n].parent = eb[HELPERS[n]["parent"]]
         bpy.ops.object.mode_set(mode='OBJECT')
-    return add, rem
+    return add, rem, mov
 
 
 def ss(a, b, x):
@@ -244,14 +283,15 @@ def redistribute(W, P, sk, joints, me=None, hanging=None):
         W[:, ix[f"xh_deltoid_{s}"]] = T * g
         W[:, ix[f"upperarm_{s}"]] = T * (1 - g)
     # skirts: the hanging part of a garment from the hips down goes onto the ring (see RING) - the two columns
-    # either side of the vertex by azimuth round the hips, the hip link down to the knee, the knee link below.
-    # The ring takes c of the row (0 at the waist .. 1 from just below the hips), the other bones share the
-    # rest in their proportions, only the biggest two kept (Unity skins with 4: it had dropped up to 14% of a
-    # dress row's weight, so the Blender preview moved differently). Idempotent: a second pass finds the same c
-    # and at most two other bones
-    ring_hip = [ix[a] for a, b in SKIRT_RING]
-    ring_knee = [ix[b] for a, b in SKIRT_RING]
-    cols = ring_hip + ring_knee
+    # either side of the vertex by azimuth round the hips, the hip link down to the mid joint, the mid link down to
+    # the knee, the knee link below. The ring takes c of the row (0 at the waist .. 1 from just below the hips), the
+    # other bones share the rest in their proportions, only the biggest two kept (Unity skins with 4: it had
+    # dropped up to 14% of a dress row's weight, so the Blender preview moved differently). Idempotent: a second
+    # pass finds the same c and at most two other bones
+    ring_hip = [ix[a] for a, m, b in SKIRT_RING]
+    ring_mid = [ix[m] for a, m, b in SKIRT_RING]
+    ring_knee = [ix[b] for a, m, b in SKIRT_RING]
+    cols = ring_hip + ring_mid + ring_knee
     is_col = np.zeros(W.shape[1], bool)
     is_col[cols] = True
     Hs = W[:, cols].sum(1)
@@ -293,15 +333,18 @@ def redistribute(W, P, sk, joints, me=None, hanging=None):
         u = az / (360.0 / n_col)
         k0 = np.floor(u).astype(int) % n_col
         t = u - np.floor(u)
-        g = ss(knee_z + 0.05, knee_z - 0.10, P[rows, 2])          # hip link -> knee link
+        mid_z = float(np.mean([joints[m][2] for a, m, b in SKIRT_RING]))
+        g1 = ss(mid_z + 0.02, mid_z - 0.08, P[rows, 2])           # hip link -> mid link
+        g2 = ss(knee_z + 0.05, knee_z - 0.10, P[rows, 2])         # mid link -> knee link
         share = c[rows] * S
-        # the knee band (0 < g < 1) is below the hips: c = 1 there, so no other bones - 4 ring links at most
+        # both bands (0 < g < 1) are below the hips: c = 1 there, so no other bones - 4 ring links at most
         idx = np.arange(len(rows))
         for kk, wt in ((k0, 1 - t), ((k0 + 1) % n_col, t)):
-            np.add.at(Wr, (idx, np.array(ring_hip)[kk]), share * wt * (1 - g))
-            np.add.at(Wr, (idx, np.array(ring_knee)[kk]), share * wt * g)
+            np.add.at(Wr, (idx, np.array(ring_hip)[kk]), share * wt * (1 - g1))
+            np.add.at(Wr, (idx, np.array(ring_mid)[kk]), share * wt * g1 * (1 - g2))
+            np.add.at(Wr, (idx, np.array(ring_knee)[kk]), share * wt * g2)
         W[rows] = Wr
-    ringed = (W[:, ring_hip + ring_knee] > 1e-6).any(1)
+    ringed = (W[:, cols] > 1e-6).any(1)
     for s in "lr":
         # thigh -> glute: half the thigh's turn at the hip, fading out by 40% down the thigh (not on skirt rows:
         # a third bone there would break the 4)
@@ -383,9 +426,9 @@ def _ring(D, parent, rig, name, h):
     """The skirt ring in the Blender preview (no simulation): the links hang in the character's frame (the
     armature's: a world delta of identity); seated (both thighs raised) the hip links turn toward their knee
     point carried by the thighs - over the lap, the back tucked under them. Unity HumanSkirt uses the same
-    targets and simulates round them."""
-    hip, knee = SKIRT_RING[h["column"]]
-    if name != hip or rig is None:                                # the knee link and its tip hang
+    targets and simulates round them. The mid link turns with the hip link (it lies on the line to the knee point)."""
+    hip, mid, knee = SKIRT_RING[h["column"]]
+    if name not in (hip, mid) or rig is None:                     # the knee link and its tip hang
         return Quaternion()
     raised = []
     for b in ("thigh_l", "thigh_r"):

@@ -61,7 +61,10 @@ namespace Humans
         [Tooltip("The character's facing (the animated model: root-motion turns rotate it, not this root)")]
         public Transform facing;
 
-        void LateUpdate()
+        void LateUpdate() => Apply();
+
+        /// <summary>the helpers on the pose as it is now (LateUpdate's; a check tool's)</summary>
+        public void Apply()
         {
             foreach (var h in helpers)
             {

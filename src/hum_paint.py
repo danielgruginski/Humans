@@ -21,6 +21,8 @@ import numpy as np
 from mathutils import Vector, noise
 from mathutils.bvhtree import BVHTree
 
+import hum_head
+
 ROOT = r"E:\Unity\Projects\GameArtGeneration\Humans"
 TEX_DIR = os.path.join(ROOT, "export", "Textures")
 SHADE_MAX = 1.25
@@ -211,6 +213,40 @@ def bake_map(ob, kind, size=SIZE, attr=None):
 
 # ------------------------------------------------------------------ landmarks
 
+def lid_margin(co, polys, nh, c, r, step=0.0003):
+    """Rays from the front: which columns see the eyeball, and between which heights."""
+    bvh = BVHTree.FromPolygons([Vector(v) for v in co], polys)
+    xs, top, bot = [], [], []
+    for x in np.arange(c[0] - 1.6 * r, c[0] + 1.6 * r, step):
+        hit = []
+        for z in np.arange(c[2] - 1.2 * r, c[2] + 1.2 * r, step):
+            h = bvh.ray_cast(Vector((x, c[1] - 0.2, z)), Vector((0, 1, 0)), 0.5)
+            if h[0] is not None and polys[h[2]][0] >= nh:
+                hit.append(z)
+        if hit:
+            xs.append(abs(x)); top.append(max(hit)); bot.append(min(hit))
+    o = np.argsort(xs)
+    xs, top, bot = np.array(xs)[o], np.array(top)[o], np.array(bot)[o]
+    box = np.ones(5) / 5                                       # the rays' stair steps
+    pad = lambda a: np.convolve(np.r_[a[0], a[0], a, a[-1], a[-1]], box, 'valid')
+    return xs, pad(top), pad(bot)
+
+
+def lip_seam(co, polys, L, step=0.00025):
+    """The lip line, z over |x|: rays from the front find its deepest point near the middle, the rim's vertices the rest."""
+    bvh = BVHTree.FromPolygons([Vector(v) for v in co], polys)
+    y0 = L[:, 1].min()
+    zc = L[:, 2].mean()
+    zs = np.arange(zc - 0.008, zc + 0.008, step)
+    rim = co[list(hum_head.LIP_RIM)]
+    xs = np.arange(0.0, rim[0, 0] - 0.001, 0.002)
+    seam = []
+    for x in xs:
+        d = [bvh.ray_cast(Vector((x + 1e-5, y0 - 0.1, z)), Vector((0, 1, 0)), 0.5)[0] for z in zs]
+        seam.append(zs[int(np.argmax([h.y if h is not None else 1.0 for h in d]))])
+    return np.r_[xs, rim[:, 0]], np.r_[seam, rim[:, 2]]
+
+
 class Face:
     """Landmarks of the neutral head (object space, metres)."""
 
@@ -233,8 +269,21 @@ class Face:
         self.nose_tip = band[np.argmin(band[:, 1])]
         chin = mid[(mid[:, 2] < self.mouth[2] - 0.02) & (mid[:, 2] > self.mouth[2] - 0.07)]
         self.chin = chin[np.argmin(chin[:, 1])]            # most forward point below the lips
+        self.lip_xs, self.lip_zs = lip_seam(co, [tuple(p.vertices) for p in me.polygons if p.vertices[0] < nh], L)
+        self.lip_x = float(self.lip_xs[-1])
+        self.lip_y = float(L[:, 1].min())
         self.top = H[np.argmax(H[:, 2])]
         self.ear_y = float(H[group_weights(ob, "ears")[:nh] > 0.5][:, 1].mean())
+        # the eye opening as seen from the front (eye pass, 2026-10-30): (|x| columns, upper lid z, lower lid z)
+        self.lid = {s: lid_margin(co, [tuple(p.vertices) for p in me.polygons], nh, self.eye[s][0], self.eye[s][1])
+                    for s in "lr"}
+        # self.eye keeps the old helper-sphere numbers: the brows, cheeks, crow's feet are laid out from them
+        for s in "lr":
+            c, r, f = self.eye[s]
+            sign = 1.0 if c[0] >= 0 else -1.0
+            R = r / hum_head.EYE_BALL
+            self.eye[s] = (c - np.array((sign * hum_head.EYE_SHIFT[0], (R - r) * -1 + hum_head.EYE_SHIFT[1],
+                                         hum_head.EYE_SHIFT[2])), R, f)
 
 
 # ------------------------------------------------------------------ masks
@@ -261,13 +310,18 @@ def paint_masks(ob, size=SIZE):
     scalp = smooth_vals(group_weights(ob, "scalp"), e, len(co), it=4)
     ears = smooth_vals(group_weights(ob, "ears"), e, len(co), it=3)
     write_attr(me, "_hum_a", np.stack([ao, np.clip(cav / 400.0 + 0.5, 0, 1), lips], 1))
-    write_attr(me, "_hum_b", np.stack([scalp, ears, np.zeros(len(co))], 1))
+    # how far inside a nostril: the pit is shallow (hum_head.NOSTRIL_PIT), so the paint makes the dark
+    nostril = np.zeros(len(co))
+    for rings in hum_head.nostril_rings(co[:nh], [tuple(p.vertices) for p in me.polygons if p.vertices[0] < nh])[0]:
+        for r, w in zip(rings, (1, 1, 1, 1, 0.8, 0.2)):
+            nostril[r] = w
+    write_attr(me, "_hum_b", np.stack([scalp, ears, nostril], 1))
     P, valid = bake_map(ob, "pos", size)
     N, _ = bake_map(ob, "nrm", size)
     A, _ = bake_map(ob, "attr", size, "_hum_a")
     B, _ = bake_map(ob, "attr", size, "_hum_b")
     AO, CAV, LIPS = A[..., 0], (A[..., 1] - 0.5) * 400.0, A[..., 2]
-    SCALP, EARS = B[..., 0], B[..., 1]
+    SCALP, EARS, NOSTRIL = B[..., 0], B[..., 1], B[..., 2]
     x, y, z = P[..., 0], P[..., 1], P[..., 2]
     ax = np.abs(x)
     side = np.where(x >= 0, 'l', 'r')
@@ -292,31 +346,54 @@ def paint_masks(ob, size=SIZE):
 
     # --- lips (group, sharpened) and the lip line
     lipm = smoothstep(0.35, 0.95, LIPS) ** 1.5
+    # one soft line along the seam, a shadow in each corner, light on the lower lip: the slit alone reads as black hooks
+    mouth_front = y < F.lip_y + 0.022
+    lip_t = ax / F.lip_x
+    lip_d = z - np.interp(ax, F.lip_xs, F.lip_zs)
+    lip_line = gauss(lip_d ** 2, 0.0009 - 0.0002 * np.clip(lip_t, 0, 1)) * smoothstep(1.08, 0.98, lip_t) * mouth_front
+    lip_corner = gauss((ax - F.lip_x) ** 2 + lip_d ** 2, 0.0024) * mouth_front
+    lip_light = gauss(((ax / 2.2) ** 2 + (lip_d + 0.0062) ** 2), 0.0035) * lipm * mouth_front
 
-    # --- eyes: lash line on the upper lid margin, crease shadow, soft lower lid
-    def lash(c, r):
-        d = np.linalg.norm(P - c, axis=-1) / r
-        front = smoothstep(-0.2, -0.55, (y - c[1]) / r)
-        up = smoothstep(-0.25, 0.15, (z - c[2]) / r)
-        outer = 1 + 0.6 * smoothstep(0.0, 0.8, (np.abs(x) - abs(c[0])) / r)
-        return smoothstep(1.28, 1.05, d) * front * up * np.clip(outer, 0, 1.4)
+    # --- the nose: a soft line in the wings' crease (hum_head.NOSE_FORM), a little light on the tip
+    nf = hum_head.NOSE_FORM
+    nP = P - co[hum_head.NOSE_TIP]
+    nose_e = np.sqrt(((ax - nf["centre"][0]) / nf["radii"][0]) ** 2 + ((nP[..., 1] - nf["centre"][1]) / nf["radii"][1]) ** 2
+                     + ((nP[..., 2] - nf["centre"][2]) / nf["radii"][2]) ** 2)
+    nose_low = smoothstep(-1.0, -0.4, (nP[..., 2] - nf["centre"][2]) / nf["radii"][2])
+    nose_low = np.where(nP[..., 1] < nf["centre"][1], nose_low, 1.0)
+    nose_line = gauss((nose_e - 1.0) ** 2, 0.2) * nose_low * smoothstep(-0.55, -0.1, N[..., 2])
+    nose_light = gauss(((nP - [0, 0.002, 0.003]) ** 2).sum(-1), 0.0045)
 
-    def crease(c, r):
-        d = np.linalg.norm((P - c) * [1, 1, 1.25], axis=-1) / r
-        front = smoothstep(-0.1, -0.5, (y - c[1]) / r)
-        up = smoothstep(0.2, 0.6, (z - c[2]) / r)
-        return gauss((d - 1.42) ** 2, 0.07) * front * up
-
-    def lower(c, r):
-        d = np.linalg.norm(P - c, axis=-1) / r
-        down = smoothstep(0.0, -0.5, (z - c[2]) / r)
-        front = smoothstep(-0.2, -0.55, (y - c[1]) / r)
-        return smoothstep(1.35, 1.1, d) * down * front
-
-    lashm = np.clip(per_eye(lash), 0, 1)
-    crem = per_eye(crease)
-    lowm = per_eye(lower)
-    darkA = np.clip(lashm * 0.95 + crem * 0.22 + lowm * 0.08, 0, 1)
+    # --- eyes, along the real lid margins (F.lid): upper lash line, thicker outward; crease; a faint lower lash shadow;
+    # pink lower rim and tear duct (blush). All per side, zero away from the eye.
+    lid_a = {k: np.zeros(x.shape) for k in ("lash", "crease", "lower", "rim", "duct", "near", "socket", "under")}
+    for s in "lr":
+        c, R_, _ = F.eye[s]
+        xs, top_, bot_ = F.lid[s]
+        x0, x1 = xs[0], xs[-1]
+        m = (x >= 0) if s == 'l' else (x < 0)
+        front = smoothstep(c[1] + 0.012, c[1] - 0.006, y) * smoothstep(0.05, 0.035, np.linalg.norm(P - c, axis=-1))
+        t = (ax - x0) / (x1 - x0)                              # 0 inner corner .. 1 outer corner
+        above = z - np.interp(ax, xs, top_)
+        below = np.interp(ax, xs, bot_) - z
+        inside = smoothstep(-0.03, 0.03, t) * smoothstep(1.10, 1.0, t)
+        w = 0.0010 + 0.0008 * smoothstep(0.35, 1.0, t)
+        lid_a["lash"] = np.where(m, smoothstep(w, w * 0.4, above) * smoothstep(-0.004, -0.001, above) * inside * front, lid_a["lash"])
+        zc = 0.0030 + 0.0014 * np.sin(np.clip(t, 0, 1) * np.pi)
+        lid_a["crease"] = np.where(m, gauss((above - zc) ** 2, 0.0008) * inside * front, lid_a["crease"])
+        lid_a["lower"] = np.where(m, smoothstep(0.0014, 0.0005, below) * smoothstep(-0.002, 0.0003, below)
+                                  * smoothstep(0.25, 0.9, t) * inside * front, lid_a["lower"])
+        lid_a["rim"] = np.where(m, smoothstep(0.0009, 0.0003, below) * smoothstep(-0.002, 0.0, below) * inside * front, lid_a["rim"])
+        duct = np.array((x0, (top_[:4].mean() + bot_[:4].mean()) / 2))
+        lid_a["duct"] = np.where(m, gauss((ax - duct[0]) ** 2 + (z - duct[1]) ** 2, 0.0013) * front, lid_a["duct"])
+        lid_a["near"] = np.where(m, smoothstep(0.012, 0.006, np.maximum(above, below)) * smoothstep(1.35, 1.15, t)
+                                 * smoothstep(-0.35, -0.15, t) * front, lid_a["near"])
+        lid_a["under"] = np.where(m, smoothstep(0.0, 0.003, below) * smoothstep(0.022, 0.013, below)
+                                  * smoothstep(-0.2, 0.1, t) * smoothstep(1.2, 0.95, t) * front, lid_a["under"])
+        sock = np.array((x0 - 0.001, top_[:4].mean() + 0.0065))
+        lid_a["socket"] = np.where(m, gauss((ax - sock[0]) ** 2 + (z - sock[1]) ** 2, 0.0055) * front, lid_a["socket"])
+    darkA = np.clip(lid_a["lash"] * 0.95 + lid_a["crease"] * 0.3 + lid_a["lower"] * 0.3, 0, 1)
+    blush = np.clip(blush + 0.55 * lid_a["rim"] + 0.9 * lid_a["duct"], 0, 1)
 
     # --- brows (painted arc over each eye)
     def brow(c, r):
@@ -334,8 +411,13 @@ def paint_masks(ob, size=SIZE):
     # --- shading: AO, cavities, painted top light, jaw underside
     light = 0.92 + 0.12 * N[..., 2]
     aot = 0.55 + 0.45 * np.clip(AO, 0, 1)
+    aot = np.maximum(aot, 0.9 * lid_a["near"])                 # no dark ring round the eye: it read as bags
+    aot = aot * (1 - 0.13 * lid_a["socket"])                   # the hollow between the inner brow and the nose
     c = np.clip(CAV / 60.0, -1, 1)
-    shade = light * aot * (1 - 0.30 * np.clip(c, 0, 1)) * (1 + 0.06 * np.clip(-c, 0, 1))
+    shade = light * aot * (1 - 0.30 * np.clip(c, 0, 1) * (1 - 0.7 * lid_a["near"])) * (1 + 0.06 * np.clip(-c, 0, 1))
+    shade *= 1 + 0.24 * lid_a["under"]                        # the lower lid faces down: a fill light, or it reads as bags
+    shade *= (1 - 0.6 * lip_line) * (1 - 0.3 * lip_corner) * (1 + 0.08 * lip_light)
+    shade *= (1 - 0.25 * nose_line) * (1 + 0.07 * nose_light) * (1 - 0.75 * NOSTRIL)
     under = smoothstep(-0.1, -0.7, N[..., 2]) * smoothstep(F.mouth[2] - 0.02, F.mouth[2] - 0.07, z)
     shade *= 1 - 0.18 * under
     shade = np.clip(shade / SHADE_MAX, 0, 1)
@@ -377,7 +459,7 @@ def paint_masks(ob, size=SIZE):
     nasom = per_eye(naso)
     under_eye = per_eye(lambda c, r: gauss(((np.linalg.norm(P - c, axis=-1) / r - 1.45) ** 2), 0.12)
                         * smoothstep(-0.2, -0.6, (z - c[2]) / r) * smoothstep(-0.2, -0.6, (y - c[1]) / r))
-    age = np.clip(0.8 * fore + 0.7 * crows + 0.8 * nasom + 0.4 * under_eye, 0, 1)
+    age = np.clip(0.8 * fore + 0.7 * crows + 0.8 * nasom + 0.18 * under_eye, 0, 1)
 
     # --- freckles: sparse spots over nose and cheeks
     zone = np.clip(per_eye(cheek) * 1.5 + gauss(((P - F.nose_tip - [0, 0.01, 0.012]) ** 2).sum(-1), 0.016), 0, 1)
@@ -439,12 +521,13 @@ def bake_head_masks(ob, size=SIZE):
     return ia, ib
 
 
-IRIS_SCALE = 0.72      # iris and pupil radii x this (0.63 of the eyeball's radius filled the whole eye opening)
+IRIS_SCALE = 0.70      # iris and pupil radii x this: 14 mm on the 31 mm ball (the lids cover 2 mm of it above, 1 below)
 
 
 def eye_mask(size=256, k=IRIS_SCALE):
-    """Front-projected eyeball: R iris coverage, G pupil, B iris darkening (limbal ring + fibres),
-    A sclera brightness (darker toward the back). k scales the iris and pupil radii."""
+    """Front-projected eyeball: R iris coverage, G pupil, B iris darkening (limbal ring + fibres, the upper lid's
+    shadow), outside the iris the pink of the inner corner (u < 0.5 on both eyes: the right eye's UVs are mirrored),
+    A sclera brightness. k scales the iris and pupil radii."""
     u = (np.arange(size) + 0.5) / size
     U, V = np.meshgrid(u, u)
     r = np.hypot(U - 0.5, V - 0.5) * 2          # 0 front pole .. 1 equator (in projected x/z)
@@ -454,12 +537,16 @@ def eye_mask(size=256, k=IRIS_SCALE):
     ang = np.arctan2(V - 0.5, U - 0.5)
     fib = (0.5 + 0.5 * np.cos(ang * 37 + 3 * np.sin(ang * 5))) ** 2 * smoothstep(0.26 * k, 0.45 * k, r)
     collar = gauss((r - 0.33 * k) ** 2, 0.03 * k)      # a lighter ring around the pupil
-    dark = np.clip(0.75 * limbal + 0.3 * fib - 0.35 * collar, 0, 1)
-    sclera = 1 - 0.35 * smoothstep(0.7, 1.0, r)
-    # the lids shade the eyeball: darker toward the top (upper lid) and a little toward the bottom; without it
-    # the white reads flat and pasted on. Projected z (eye up) = 2v - 1.
+    # the lids shade the eyeball: darker from the upper lid down, a little at the lower lid and toward the corners, where
+    # it curves away; without it the white is the brightest thing on the face, flat and pasted on.
+    # Projected z (eye up) = 2v - 1; the upper lid stands at about z 0.32, the lower at -0.39, the corners at x 0.9.
     z = (V - 0.5) * 2
-    sclera = sclera * (1 - 0.30 * smoothstep(0.10, 0.70, z) - 0.12 * smoothstep(0.30, 0.85, -z))
+    x = (U - 0.5) * 2
+    lid = smoothstep(-0.02, 0.32, z)
+    dark = np.clip(0.75 * limbal + 0.3 * fib - 0.35 * collar + 0.55 * lid, 0, 1)
+    sclera = (1 - 0.55 * lid) * (1 - 0.16 * smoothstep(-0.15, -0.39, z)) * (1 - 0.42 * smoothstep(0.45, 0.92, r))
+    pink = smoothstep(-0.55, -0.88, x)                         # the inner corner
+    dark = np.where(iris > 0.5, dark, pink)
     M = np.stack([iris, pupil, dark, sclera], -1)
     return save_image("T_Eye_Mask", M, os.path.join(TEX_DIR, "T_Eye_Mask.png"))
 

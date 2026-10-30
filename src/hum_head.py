@@ -9,6 +9,7 @@ import math
 import bpy
 import numpy as np
 from mathutils import Vector
+from mathutils.kdtree import KDTree
 
 import hum_mpfb
 
@@ -25,14 +26,44 @@ STYLE = dict(
     eye_radius=0.055,      # ... to nothing at this radius (m)
     cranium=1.05,          # skull above the brows grows a little
     targets={
-        "nose-volume-decr": 0.55, "nose-point-width-decr": 0.45, "nose-scale-vert-decr": 0.25,
-        "mouth-scale-horiz-decr": 0.25, "mouth-scale-depth-decr": 0.35,
-        "mouth-lowerlip-volume-decr": 0.3, "mouth-upperlip-volume-decr": 0.15, "chin-width-decr": 0.3,
+        # MPFB's own nose, a little shorter (2026-10-30; was also nose-volume-decr 0.55, nose-point-width-decr 0.45, which
+        # took the tip to a point and the flanks to a triangle); the wings are NOSE_FORM
+        "nose-scale-vert-decr": 0.25,
+        # wider, flatter lips with a bow (2026-10-30; was 41.5 mm wide, the upper lip 3.8 mm over the lower, the seam 7.3 mm deep)
+        "mouth-scale-horiz-incr": 0.3, "mouth-scale-depth-decr": 0.8, "mouth-scale-vert-decr": 0.3,
+        "mouth-lowerlip-volume-decr": 0.45, "mouth-upperlip-volume-decr": 0.7, "mouth-upperlip-height-decr": 0.4,
+        "mouth-angles-up": 0.2, "mouth-cupidsbow-incr": 0.5, "mouth-philtrum-volume-incr": 0.5,
+        "chin-width-decr": 0.3,
         "l-cheek-volume-incr": 0.3, "r-cheek-volume-incr": 0.3,
-        "l-eye-height2-decr": 0.7, "r-eye-height2-decr": 0.7,        # relaxed upper lids
+        # a wider, taller opening (2026-10-30; was eye-height2-decr 0.7, a 7.8 mm slit that hid half the iris)
+        "l-eye-scale-incr": 0.5, "r-eye-scale-incr": 0.5, "l-eye-height2-incr": 0.1, "r-eye-height2-incr": 0.1,
     },
 )
+# The eyeball against MPFB's helper sphere: 31 mm across (was 36), its iris where the lids want it and clear of the
+# lids' depth (the helper sits 2.7 mm behind them, low and toward the nose in the opening). Metres; x outward.
+EYE_BALL = 0.852
+EYE_SHIFT = (0.0016, -0.0020, -0.0012)
 NO_STYLE = dict(eye_scale=1.0, eye_radius=0.05, cranium=1.0, targets={})
+# The lips meet (mouth pass, 2026-10-30): MPFB leaves a 0.5 mm slit from x 18 mm to the corner, and the corner vertex
+# spikes down past the line; through the slit the dark inside of the mouth read as black hooks. Head vertex numbers on
+# +x, the mesh is mirrored: the lower rim lifted onto the upper (mm), the corner raised to the line with a falloff.
+LIP_LIFT = {493: 0.3, 494: 0.1, 2656: 0.4, 2634: 0.1, 2622: 0.2, 2658: 0.2, 2590: 0.2, 2589: 0.4, 2598: 0.4, 2595: 0.3, 2596: 0.8,
+            2597: 0.8, 3417: 0.3, 3418: 0.5, 3419: 0.5, 2584: 0.3}
+LIP_RIM = (2617, 2571, 2570, 2585, 2583, 2584)         # the upper rim from x 16 mm out; the last one is the corner
+LIP_RAISE, LIP_RAISE_R = 0.0003, 0.004
+# The nose's wings (nose pass, 2026-10-30): MPFB's nose is one bulb, its flanks run straight down from the bridge. A lobe
+# on each side, an ellipsoid around the wing (metres from the tip vertex; x outward), pushed out inside and creased along
+# its edge, the underside left alone. Moves along the skin's normal.
+NOSE_TIP = 1431
+NOSE_FORM = dict(centre=(0.013, 0.012, -0.0015), radii=(0.0065, 0.008, 0.0075), lobe=0.0018, crease=0.0014, width=0.3)
+# The nostrils: MPFB's is a folded pouch; it shows lit tongues and black slits (walls edge-on to the view, facing away from
+# the light). Rings of vertices outward from its deepest vertex (+x; mirrored): the inner rings relaxed into a skin over
+# the opening (ring NOSTRIL_RIM stays), then pushed up into a pit shallow enough to keep its walls out of that: the
+# paint makes the dark (hum_paint). A deep pit brings the slits back.
+NOSTRIL_SEED, NOSTRIL_RIM, NOSTRIL_PIT = 2548, 5, 0.001
+_MIRROR = {}
+_QUADS = {}
+_NOSTRIL = {}
 
 # Mild body stylisation (applied after the face stylisation, never touches the head or the neck ring)
 BODY_STYLE = dict(
@@ -204,11 +235,20 @@ def _eye_unit():
 _EYE = _eye_unit()
 
 
-def eye_verts(C, rig, side, shrink=0.96):
-    c, r, fwd = eye_fit(C, rig, side)
-    q = Vector((0, -1, 0)).rotation_difference(Vector(fwd)).to_matrix()
-    M = np.array(q) * (r * shrink)
-    return _EYE[0] @ M.T + c
+def eye_centre(C, rig, side, shrink=0.96):
+    """The eyeball's centre and radius: the helper's front pole kept, then EYE_SHIFT."""
+    c, r, _ = eye_fit(C, rig, side)
+    R = r * shrink
+    Rn = R * EYE_BALL
+    sign = 1.0 if c[0] >= 0 else -1.0
+    cn = c + np.array((sign * EYE_SHIFT[0], (R - Rn) * -1 + EYE_SHIFT[1], EYE_SHIFT[2]))
+    return cn, Rn
+
+
+def eye_verts(C, rig, side):
+    """The ball looks straight ahead (the helper's own axis looks 4.6 deg down and 2.4 deg out: a vacant stare)."""
+    cn, Rn = eye_centre(C, rig, side)
+    return _EYE[0] * Rn + cn
 
 
 def retemplate_eyes(ob, old_template):
@@ -282,6 +322,111 @@ def stylize_body(C, rig, s=BODY_STYLE):
     return C
 
 
+def mirrored(H):
+    """Head vertex numbers: i -> its twin across x."""
+    if len(H) not in _MIRROR:
+        kd = KDTree(len(H))
+        for i, v in enumerate(H):
+            kd.insert((-v[0], v[1], v[2]), i)
+        kd.balance()
+        _MIRROR[len(H)] = np.array([kd.find(v)[1] for v in H])
+    return _MIRROR[len(H)]
+
+
+def lip_seal(H):
+    """The move that closes the lips (metres), for a head's skin in any state."""
+    D = np.zeros(H.shape)
+    mir = mirrored(H)
+    for v in (LIP_RIM[-1], mir[LIP_RIM[-1]]):
+        t = np.clip(1.0 - np.linalg.norm(H - H[v], axis=1) / LIP_RAISE_R, 0.0, 1.0)
+        D[:, 2] += LIP_RAISE * t * t * (3 - 2 * t)
+    for v, mm in LIP_LIFT.items():
+        D[list({v, mir[v]}), 2] += mm / 1000
+    return D
+
+
+def _vertex_normals(H, faces):
+    if len(faces) not in _QUADS:
+        _QUADS[len(faces)] = np.array([f if len(f) == 4 else (f[0], f[1], f[2], f[2]) for f in faces])
+    Q = _QUADS[len(faces)]
+    fn = np.cross(H[Q[:, 2]] - H[Q[:, 0]], H[Q[:, 3]] - H[Q[:, 1]])
+    N = np.zeros(H.shape)
+    for c in range(4):
+        np.add.at(N, Q[:, c], fn)
+    return N / np.maximum(np.linalg.norm(N, axis=1, keepdims=True), 1e-12)
+
+
+def nostril_rings(H, faces):
+    """Per side: the rings of head vertices from the nostril's deepest one out to its rim."""
+    if len(faces) not in _NOSTRIL:
+        adj = {}
+        for f in faces:
+            for a, b in zip(f, f[1:] + f[:1]):
+                adj.setdefault(a, set()).add(b)
+                adj.setdefault(b, set()).add(a)
+        mir = mirrored(H)
+        sides = []
+        for seed in (NOSTRIL_SEED, int(mir[NOSTRIL_SEED])):
+            rings, seen = [[seed]], {seed}
+            for _ in range(NOSTRIL_RIM):
+                nxt = sorted({w for v in rings[-1] for w in adj[v]} - seen)
+                seen.update(nxt)
+                rings.append(nxt)
+            sides.append(rings)
+        _NOSTRIL[len(faces)] = (sides, adj)
+    return _NOSTRIL[len(faces)]
+
+
+def _nostril_pits(H, faces):
+    """H with the nostrils' inner rings replaced."""
+    sides, adj = nostril_rings(H, faces)
+    H = H.copy()
+    for rings in sides:
+        inner = [v for r in rings[:-1] for v in r]
+        at = {v: i for i, v in enumerate(inner)}
+        A = np.eye(len(inner))
+        b = np.zeros((len(inner), 3))
+        for v, i in at.items():
+            for w in adj[v]:
+                if w in at:
+                    A[i, at[w]] -= 1.0 / len(adj[v])
+                else:
+                    b[i] += H[w] / len(adj[v])
+        X = np.linalg.solve(A, b)
+        k = np.array([n for n, r in enumerate(rings[:-1]) for _ in r], dtype=float)
+        X[:, 2] += NOSTRIL_PIT * (1.0 - (k / NOSTRIL_RIM) ** 2)
+        H[inner] = X
+    return H
+
+
+def nose_form(H, faces):
+    """The wings' move (metres), for a head's skin in any state."""
+    f = NOSE_FORM
+    P = H - H[NOSE_TIP]
+    e = np.sqrt(((np.abs(P[:, 0]) - f["centre"][0]) / f["radii"][0]) ** 2 + ((P[:, 1] - f["centre"][1]) / f["radii"][1]) ** 2
+                + ((P[:, 2] - f["centre"][2]) / f["radii"][2]) ** 2)
+    near = e < 2.5
+    N = _vertex_normals(H, faces)
+    up = np.clip((N[:, 2] + 0.55) / 0.45, 0.0, 1.0)
+    under = np.clip((N[:, 2] + 0.95) / 0.5, 0.0, 1.0)      # the lobe wraps under the wing further than the crease does
+    t = np.clip((1.0 - e) / 0.5, 0.0, 1.0)
+    # the crease fades on the low front arc, where the wing runs into the tip's underside
+    low = np.clip((P[:, 2] - f["centre"][2]) / (0.6 * f["radii"][2]) + 1.0, 0.0, 1.0)
+    low = np.where(P[:, 1] < f["centre"][1], low * low * (3 - 2 * low), 1.0)
+    d = f["lobe"] * t * t * (3 - 2 * t) * under * under * (3 - 2 * under) \
+        - f["crease"] * low * np.exp(-((e - 1.0) / f["width"]) ** 2) * up * up * (3 - 2 * up)
+    D = N * (d * near)[:, None]
+    # two rounds of averaging over the mesh: its quads are 3 mm here, about the crease's width
+    Q = _QUADS[len(faces)]
+    a, b = np.hstack([Q[:, c] for c in range(4)]), np.hstack([Q[:, (c + 1) % 4] for c in range(4)])
+    for _ in range(2):
+        S, W = np.zeros(D.shape), np.zeros(len(D))
+        np.add.at(S, a, D[b])
+        np.add.at(W, a, 1.0)
+        D = 0.5 * D + 0.5 * S / np.maximum(W, 1.0)[:, None]
+    return _nostril_pits(H + D, faces) - H
+
+
 def full_coords(src, rig, macros=None, race=None, targets=None, style=STYLE, body_style=BODY_STYLE, deform=None):
     """All MPFB vertices (incl. joint helpers) for one state: face stylisation, body stylisation,
     feet on the ground (the skeleton carries height changes; keys are residuals, see hum_rig).
@@ -291,6 +436,8 @@ def full_coords(src, rig, macros=None, race=None, targets=None, style=STYLE, bod
     for k, v in (targets or {}).items():
         t[k] = t.get(k, 0.0) + v
     C = stylize(hum_mpfb.capture(src, macros, race, t), rig, style)
+    if style is not NO_STYLE:
+        C[rig.head_idx] += lip_seal(C[rig.head_idx]) + nose_form(C[rig.head_idx], rig.faces)
     C = stylize_body(C, rig, body_style)
     if deform is not None:
         C = deform(C)
@@ -334,8 +481,10 @@ def build(scene, src, rig, name=HEAD, materials=(), **state):
                 uvl.data[l_].uv = rig.face_uvs[fi][k]
         else:
             for l_ in p.loop_indices:
-                v = _EYE[0][(me.loops[l_].vertex_index - nh) % ne]
-                uvl.data[l_].uv = (0.5 + 0.5 * v[0], 0.5 + 0.5 * v[2])
+                vi = me.loops[l_].vertex_index - nh
+                v = _EYE[0][vi % ne]
+                mx = 1 if vi < ne else -1                     # mirrored on the right: u < 0.5 is the inner corner
+                uvl.data[l_].uv = (0.5 + 0.5 * mx * v[0], 0.5 + 0.5 * v[2])
             p.material_index = 1
     for p in me.polygons:
         p.use_smooth = True

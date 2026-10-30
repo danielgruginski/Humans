@@ -169,13 +169,17 @@ def skin_material(mask_a, mask_b, mask_c=None, name="M_HumanSkin", rot=None):
     return mat
 
 
+EYE_CORNER = (0.62, 0.34, 0.31, 1)
+
+
 def eye_material(mask, name="M_HumanEye"):
     mat = bpy.data.materials.get(name) or bpy.data.materials.new(name)
     mat.use_nodes = True
     T = _NT(mat)
     (ir, pu, dk), sc = T.tex(mask)
     iris = T.attr("hum_iris")
-    c = T.mul((0.86, 0.84, 0.80, 1), T.mix((0, 0, 0, 1), (1, 1, 1, 1), sc))
+    c = T.mul((0.72, 0.70, 0.66, 1), T.mix((0, 0, 0, 1), (1, 1, 1, 1), sc))
+    c = T.mix(c, EYE_CORNER, dk)                        # outside the iris dk is the inner corner's pink
     iris_c = T.mix(iris, T.mul(iris, (0.25, 0.25, 0.25, 1)), dk)
     milk = T.attr("hum_milk", False)                    # the undead's clouded eyes: pupil and iris fade out
     iris_c = T.mix(iris_c, (0.62, 0.64, 0.60, 1), T.math('MULTIPLY', milk, 0.55))

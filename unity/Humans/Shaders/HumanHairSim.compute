@@ -1,0 +1,259 @@
+// Strand-card hair simulated on the GPU (HumanHairSim, the hair spike, 2026-10-29). A particle is one row of a card
+// (hum_cards: Guide.x), its strand the card's rows root -> tip. The hair as skinned (its face keys and its head /
+// neck / spine / clavicle weights) is the target. Unlike the cloth sim's damped offset, a strand keeps its own momentum
+// in world space (Verlet), so it lags, swings and trails when the head moves; each substep it is eased back toward the
+// target (strongly at the root, little at the tip: the style comes back), keeps the target's lengths along the strand
+// (split between neighbours, root first), stays within its max distance of the target, and is kept off the worn layers (the
+// body, the head, the clothes: their nearest skinned point), at least 2 mm in front, or as close as its target lies.
+// Builds (2026-10-29, "Sim in builds"): the meshes aren't readable there, so the rest positions (the character's face
+// and build keys in them) come from Unity's own GPU skinning when bound - RestHair / RestLayer read a renderer's skinned
+// vertex buffer and undo its skinning with the bone palette it was skinned with. One thread a strand runs every
+// substep (Simulate): 5 dispatches a frame, not ~40.
+// _Out: 3 a particle - the target, the position, the rotation from the target's strand direction to the sim's -
+// read by Humans/HairCards (_HairSim).
+
+#pragma kernel RestHair
+#pragma kernel RestLayer
+#pragma kernel SkinHair
+#pragma kernel SkinLayer
+#pragma kernel Begin
+#pragma kernel Simulate
+#pragma kernel Output
+
+#define G 64
+
+StructuredBuffer<float4x4> _Bones;          // bone.localToWorld * bindpose (the hair's, then each layer's)
+
+RWStructuredBuffer<float4> _Rest;           // xyz rest (bind space, the keys applied): RestHair writes it
+StructuredBuffer<float4> _Param;            // x follow (per 1/240 s), y path, z max distance
+StructuredBuffer<int2> _Link;               // x parent (-1: the root), y child (-1: the tip)
+StructuredBuffer<int> _StrandStart;         // strand s: particles [start[s], start[s + 1])
+StructuredBuffer<int4> _SkinI;
+StructuredBuffer<float4> _SkinW;
+StructuredBuffer<int> _VertStart;           // particle p's mesh vertices: _VertList[_VertStart[p] .. _VertStart[p + 1])
+StructuredBuffer<int> _VertList;
+RWStructuredBuffer<float4> _Target;         // skinned this frame
+RWStructuredBuffer<float4> _TargetPrev;     // skinned last frame
+RWStructuredBuffer<float4> _Pos;            // the particles
+RWStructuredBuffer<float4> _Prev;           // the particles a substep ago (Verlet)
+RWStructuredBuffer<int> _Near;              // nearest layer point to the target (-1: none in reach)
+RWStructuredBuffer<float4> _Out;
+
+RWStructuredBuffer<float4> _LRest;          // layer points: xyz rest (bind space): RestLayer writes them
+RWStructuredBuffer<float4> _LRestN;
+StructuredBuffer<int4> _LSkinI;             // into _Bones (offset past the hair's)
+StructuredBuffer<float4> _LSkinW;
+StructuredBuffer<int> _LVert;               // the layer point's mesh vertex (in its renderer)
+RWStructuredBuffer<float4> _LPos;
+RWStructuredBuffer<float4> _LNrm;
+
+ByteAddressBuffer _Skinned;                 // a renderer's skinned vertices (position, normal, ...), its root bone's space
+float4x4 _SkinToWorld;                      // that space (the root bone's position and rotation, unit scale)
+uint _Stride, _LOffset, _LCount;
+
+uint _N, _NL, _NS, _Sub, _Iter;
+float _Damp, _Drag, _Gravity, _Dt, _StepK, _Gap, _Deep, _Reach, _Teleport, _Disk, _Inside;
+uint _First;
+
+float4x4 Blend(int4 i, float4 w)
+{
+    float4x4 m = w.x * _Bones[i.x];
+    if (w.y > 0) m += w.y * _Bones[i.y];
+    if (w.z > 0) m += w.z * _Bones[i.z];
+    if (w.w > 0) m += w.w * _Bones[i.w];
+    return m;
+}
+
+float3 Skin(float3 p, int4 i, float4 w) { return mul(Blend(i, w), float4(p, 1)).xyz; }
+
+float3 SkinN(float3 n, int4 i, float4 w) { return normalize(mul((float3x3)Blend(i, w), n)); }
+
+float3x3 Inverse3(float3x3 m)
+{
+    float3 a = m[0], b = m[1], c = m[2];
+    float3 r0 = cross(b, c), r1 = cross(c, a), r2 = cross(a, b);
+    float det = dot(a, r0);
+    return transpose(float3x3(r0, r1, r2)) / det;
+}
+
+// a skinned point back to bind space: p = M x + t  ->  x = M^-1 (p - t); inv = M^-1
+float3 Unskin(float3 p, int4 i, float4 w, out float3x3 inv)
+{
+    float4x4 m = Blend(i, w);
+    float3 t = float3(m[0][3], m[1][3], m[2][3]);
+    inv = Inverse3((float3x3)m);
+    return mul(inv, p - t);
+}
+
+float3 SkinnedPos(uint v) { return mul(_SkinToWorld, float4(asfloat(_Skinned.Load3(v * _Stride)), 1)).xyz; }
+float3 SkinnedNrm(uint v) { return mul((float3x3)_SkinToWorld, asfloat(_Skinned.Load3(v * _Stride + 12))); }
+
+[numthreads(G, 1, 1)]
+void RestHair(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    if (i >= _N) return;
+    float3 s = 0;
+    int a = _VertStart[i], b = _VertStart[i + 1];
+    for (int k = a; k < b; k++) s += SkinnedPos((uint)_VertList[k]);
+    s /= max(b - a, 1);
+    float3x3 inv;
+    _Rest[i] = float4(Unskin(s, _SkinI[i], _SkinW[i], inv), 1);
+}
+
+[numthreads(G, 1, 1)]
+void RestLayer(uint3 id : SV_DispatchThreadID)
+{
+    uint j = id.x;
+    if (j >= _LCount) return;
+    uint i = j + _LOffset;
+    uint v = (uint)_LVert[i];
+    float3x3 inv;
+    _LRest[i] = float4(Unskin(SkinnedPos(v), _LSkinI[i], _LSkinW[i], inv), 1);
+    // a normal is skinned by the blended matrix's rotation (no shear in practice): back by its inverse
+    _LRestN[i] = float4(normalize(mul(inv, SkinnedNrm(v))), 0);
+}
+
+[numthreads(G, 1, 1)]
+void SkinHair(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    if (i >= _N) return;
+    float3 t = Skin(_Rest[i].xyz, _SkinI[i], _SkinW[i]);
+    _TargetPrev[i] = _First ? float4(t, 1) : _Target[i];
+    _Target[i] = float4(t, 1);
+}
+
+[numthreads(G, 1, 1)]
+void SkinLayer(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    if (i >= _NL) return;
+    _LPos[i] = float4(Skin(_LRest[i].xyz, _LSkinI[i], _LSkinW[i]), 1);
+    _LNrm[i] = float4(SkinN(_LRestN[i].xyz, _LSkinI[i], _LSkinW[i]), 0);
+}
+
+// the frame's start: a first frame (or a teleport) starts on the target; each particle's nearest layer point
+[numthreads(G, 1, 1)]
+void Begin(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    if (i >= _N) return;
+    float3 t = _Target[i].xyz;
+    if (_First || distance(t, _TargetPrev[i].xyz) > _Teleport)
+    {
+        _TargetPrev[i] = _Target[i];
+        _Pos[i] = _Target[i];
+        _Prev[i] = _Target[i];
+    }
+    int best = -1;
+    float bd = _Reach * _Reach;
+    for (uint k = 0; k < _NL; k++)
+    {
+        float3 d = _LPos[k].xyz - t;
+        float dd = dot(d, d);
+        if (dd < bd) { bd = dd; best = (int)k; }
+    }
+    _Near[i] = best;
+}
+
+// a strand, every substep: Verlet (damping the swing relative to the target, a little drag, gravity), eased back to the
+// target; then its skinned lengths (Gauss-Seidel, root to tip), the max distance, the layers
+[numthreads(G, 1, 1)]
+void Simulate(uint3 id : SV_DispatchThreadID)
+{
+    uint s = id.x;
+    if (s >= _NS) return;
+    uint a = (uint)_StrandStart[s], b = (uint)_StrandStart[s + 1];
+    float damp = pow(saturate(1 - _Damp), _StepK);   // the knobs are per 1/240 s: the same motion at any frame rate
+    float drag = pow(saturate(1 - _Drag), _StepK);
+    for (uint k = 0; k < _Sub; k++)
+    {
+        float s0 = k / (float)_Sub, s1 = (k + 1) / (float)_Sub;
+        float3 rootT = lerp(_TargetPrev[a].xyz, _Target[a].xyz, s1);
+        _Pos[a] = float4(rootT, 1);
+        _Prev[a] = float4(rootT, 1);
+        for (uint i = a + 1; i < b; i++)
+        {
+            float3 tA = lerp(_TargetPrev[i].xyz, _Target[i].xyz, s0);
+            float3 tB = lerp(_TargetPrev[i].xyz, _Target[i].xyz, s1);
+            float3 x = _Pos[i].xyz;
+            float3 vt = tB - tA;
+            float3 v = x - _Prev[i].xyz;
+            v = (vt + (v - vt) * damp) * drag;
+            _Prev[i] = float4(x, 1);
+            x += v + float3(0, -_Gravity, 0) * (_Dt * _Dt);
+            x += (tB - x) * (1 - pow(saturate(1 - _Param[i].x), _StepK));
+            _Pos[i] = float4(x, 1);
+        }
+        // lengths: each segment's error split between its two ends (all of it on the free end next to the root), root to
+        // tip, _Iter passes. Follow-the-leader (all of it on the child) fed energy into Verlet: strands whipped into curls
+        for (uint it = 0; it < _Iter; it++)
+            for (uint j = a + 1; j < b; j++)
+            {
+                float3 xp = _Pos[j - 1].xyz;
+                float3 x = _Pos[j].xyz;
+                float L = length(_Target[j].xyz - _Target[j - 1].xyz);   // the skinned length (the neck stretches it)
+                float3 d = x - xp;
+                float l = length(d);
+                if (l < 1e-6) continue;
+                float3 c = d * ((l - L) / l);
+                if (j - 1 == a) x -= c;
+                else { x -= c * 0.5; _Pos[j - 1] = float4(xp + c * 0.5, 1); }
+                _Pos[j] = float4(x, 1);
+            }
+        for (uint q = a + 1; q < b; q++)
+        {
+            float3 x = _Pos[q].xyz;
+            float3 tj = lerp(_TargetPrev[q].xyz, _Target[q].xyz, s1);
+            float md = _Param[q].z;
+            float3 o = x - tj;
+            float lo = length(o);
+            if (lo > md) x = tj + o * (md / max(lo, 1e-6));
+            int n = _Near[q];
+            if (n >= 0)
+            {
+                float3 p = _LPos[n].xyz, nn = _LNrm[n].xyz;
+                float3 r = x - p;
+                float sd = dot(r, nn);
+                float rest = dot(tj - p, nn);
+                // a point's plane holds only near it (_Disk across), and only for hair resting no deeper than _Inside
+                // behind it: as an endless plane, a shoulder-top point lifted the front locks off the chest (their rest
+                // 3 cm under its plane) and they stuck out forward when walking
+                if (length(r - nn * sd) < _Disk && rest > -_Inside)
+                {
+                    // at least 2 mm out even where the target lies inside the layer (hair draped over the bare body sat
+                    // inside the shirt and showed it through in patches); hair resting closer than the gap at rest stays
+                    float need = min(_Gap, max(rest, 0.002));
+                    if (sd < need && sd > -_Deep) x += nn * (need - sd);
+                }
+            }
+            _Pos[q] = float4(x, 1);
+        }
+    }
+}
+
+float4 FromTo(float3 a, float3 b)
+{
+    float c = dot(a, b);
+    if (c < -0.9999) return float4(normalize(abs(a.x) < 0.9 ? cross(a, float3(1, 0, 0)) : cross(a, float3(0, 1, 0))), 0);
+    return normalize(float4(cross(a, b), 1 + c));
+}
+
+// the rotation a row turns by: the target's strand direction there (its two segments averaged) onto the sim's
+[numthreads(G, 1, 1)]
+void Output(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    if (i >= _N) return;
+    int2 l = _Link[i];
+    float3 t = _Target[i].xyz, x = _Pos[i].xyz;
+    float3 dt = 0, dx = 0;
+    if (l.x >= 0) { dt += normalize(t - _Target[l.x].xyz); dx += normalize(x - _Pos[l.x].xyz); }
+    if (l.y >= 0) { dt += normalize(_Target[l.y].xyz - t); dx += normalize(_Pos[l.y].xyz - x); }
+    float4 q = float4(0, 0, 0, 1);
+    if (dot(dt, dt) > 1e-8 && dot(dx, dx) > 1e-8) q = FromTo(normalize(dt), normalize(dx));
+    _Out[i * 3] = float4(t, 1);
+    _Out[i * 3 + 1] = float4(x, 1);
+    _Out[i * 3 + 2] = q;
+}

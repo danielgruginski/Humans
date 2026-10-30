@@ -1045,7 +1045,7 @@ def _back_cape(B, under, span_deg=62, hem_drop=0.06, flare=0.12):
     Lr = float(np.linalg.norm(B.j["hand_l"] - B.j["upperarm_l"])) + 0.06
     for sd in "lr":
         a = B.j[f"upperarm_{sd}"]
-        for swing in (0.0, math.radians(20), math.radians(38)):         # hanging, swung back when walking
+        for swing in K.ARM_SWING:                                        # hanging (as the Cloak: no shell)
             d = np.array([0.0, math.sin(swing), -math.cos(swing)])
             for u in np.linspace(0.1, 1.0, 12):
                 c = a + d * Lr * u

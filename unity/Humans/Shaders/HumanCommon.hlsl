@@ -18,6 +18,9 @@ struct HAttributes
     float2 uv4        : TEXCOORD4;   // plate "Ornament": x = etched/inlaid ornament weight
                                      // cloth: uv2 = rest position xy, uv3 = (rest z, 1 = flat trim)
     half4  color      : COLOR;       // hair "HairData": r = clump edge
+#ifdef HUMAN_VERTEX_ID
+    uint   vid        : SV_VertexID; // cloth: the simulated vertex (HumanClothSim's _SimOut; target 4.5)
+#endif
     UNITY_VERTEX_INPUT_INSTANCE_ID
 };
 

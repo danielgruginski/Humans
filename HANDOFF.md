@@ -112,6 +112,52 @@
   much denser: Unity's area-and-angle weighted normals broke on tiny triangles round the front pole (a 4-degree first
   ring flipped the pupil normals). `hum_paint.IRIS_SCALE` 0.72 (the iris filled the opening once the real front
   showed) and the sclera is shaded toward the lids.
+- Eye pass (2026-10-30, Daniel: faces look ugly, "something in the eyes"). Before: ball R 18.2 mm, opening 26 x 7.8 mm,
+  iris 16.9 mm with a quarter hidden by each lid, gaze 4.6 deg down + 2.4 deg out per eye, unshaded whites. Now: ball
+  R 15.5 (`hum_head.EYE_BALL`, `EYE_SHIFT`; `eye_verts` looks straight ahead), opening 28.2 x 10.8 mm (STYLE
+  `eye-scale-incr` 0.5, `eye-height2-incr` 0.1), iris 14 mm (`IRIS_SCALE` 0.70), about 77% of it showing, IPD 61.4 mm.
+  Measure with front ray casts (`hum_eyes.opening`): the opening is not a mesh boundary. `hum_paint` draws lash, crease
+  and rim along the real lid margin (`Face.lid`, `lid_a`); `Face.eye` keeps the old helper sphere so brows, cheeks and
+  crow's feet stay put. `Humans/Eye`: darker sclera, pink corners (`EYE_CORNER`, also in `hum_material`), lid shadow in
+  T_Eye_Mask, a fixed catchlight (`_Catchlight`). T_Eye_Mask stays 256 (HumanSetup sets its import max).
+  The shipped head was patched in place, no rebuild: `hum_eyes.patch(head)` (one run, guard `head["eye_pass"]`) and
+  `retarget(old_targets)` add a constant skin delta to the basis and every key on Head + LODs and refit the eyes per key;
+  the basis matches a fresh `all_coords` to 0.00016 mm. Install: Human_Body.fbx + the 3 masks + HumanEye.shader, reimport;
+  Human.prefab references the fbx by fileID, so no prefab rebuild. Shots: `renders/eyes_unity_before_after*.png`.
+  Left: the band 6-10 mm under the eye is real-time light on the lower lid, which faces down (surface recedes 3.5 mm
+  over 11 mm); the painted fill (`lid_a["under"]`, +24%) only takes the edge off. MPFB `eye-bag-*` targets barely change
+  it. Next idea: push the skin 1-2 mm forward in that band (a skin delta, same patch method). Also a dark sliver at the
+  inner corners, visible only in close-ups.
+- Mouth pass (2026-10-30, after the eyes). Before: 41.5 mm wide, upper lip 3.8 mm over the lower, seam 7.3 mm deep, a
+  pout; a 0.5 mm slit from x 18 mm out and a corner vertex spiking down showed the dark inside as black hooks. Now: 46 mm
+  wide, thinner upper lip with a bow and philtrum, less overhang (STYLE mouth targets), the corners about 1 mm above the
+  middle. `hum_head.lip_seal` closes the slit in every built state (`LIP_LIFT`, vertex numbers on +x; rays through the
+  seam 3 of 4600). `hum_paint`: one soft shaded line along the seam (`lip_seam`, `F.lip_xs/zs`), a shadow in each corner,
+  light on the lower lip. `hum_mouth.py` holds the in-place patches (`seal`, `beards`: Beard_* and LODs follow the skin's
+  move by nearest vertices, up to 3.3 mm). Basis matches a fresh `all_coords` to 0.00006 mm. Small dark ticks remain at
+  the corners in extreme close-ups (faces the light can't reach; Unity preview's weak ambient overstates them).
+  Shots: `renders/mouth_unity_before_after.png`.
+- Nose pass (2026-10-30, after the mouth). Before: a triangle from the front, a beak in profile (STYLE `nose-volume-decr`
+  0.55 + `nose-point-width-decr` 0.45), no wings, black slits in the nostrils. Now: MPFB's own rounder nose (only
+  `nose-scale-vert-decr` stays), the tip 4 mm back. `hum_head.nose_form` runs in every built state: `NOSE_FORM` pushes a
+  lobe out and creases its edge on each side (the wings), `_nostril_pits` replaces MPFB's folded pouch with a relaxed skin
+  (`nostril_rings`, rings out from vertex 2548) and a pit `NOSTRIL_PIT` 1 mm deep. Keep the pit shallow: at 3.5 mm its
+  walls go edge-on to the view and face away from the light, and the black slits come back; the mask was smooth and
+  there were no back faces, so it was lighting on those walls, not paint. `hum_paint` makes the dark: NOSTRIL (MaskB's
+  attribute bake, the free channel of `_hum_b`) into `shade`, a soft line in the crease, a little light on the tip. Nothing
+  above 15 mm over the tip moved. Applied in place like the mouth (constant delta on Head, keys, LODs, Beard_*: the
+  basis matches a fresh `all_coords` to 0.00006 mm); a full rebuild gives the same shape. Face sliders still narrow the
+  nose a lot: `FEM_BIAS` NoseWidth -0.35, NoseTipWidth -0.3 (seed 2 rolls -0.62, -0.48). Shots: `renders/nose_before_after.png`.
+- Face types (2026-10-30, Daniel's "random preset faces"). Sliders rolled alone made forty small unrelated changes, so every random face read alike. `hum_faces.FACE_TYPES` (12: Plain, Rugged, Long, Hawk, Round, Fine, Broad, Pinched, Snub, Severe, Soft, Jaw; odds per sex) adds a type's slider means at 0.75-1.2 strength, each face slider's own noise is x0.55 (FACE_NOISE), FACE_FLESH / FACE_OLD tie cheeks and neck to the Heavy/Thin roll and lips, lids and lobes to age. The type has its own RNG stream (seed * 1000003 + 12345), the main stream's draws are unchanged, so hair, clothes and body stay per seed; every NPC's face itself changes. C#: `HumanFaceGenerator.Random(cfg, seed, forceType)`, `FaceTypeOf`; config `faceTypes` + slider `flesh`/`old`, patched in both JSONs without a full re-export. Means can be tuned in the JSON with no recompile. FEM_BIAS narrowed nose eased (NoseWidth -0.2, NoseTipWidth -0.12). Test gotcha: re-rolling one prefab instance many times in one command drew stale pieces (hoods, brows) in some frames though the active pieces were right: use a new instance per shot. Sheets: renders/face_types_*.png.
+- LOD neck (2026-10-30). Two causes, neither from the face passes. The gap: head and body LODs are decimated apart, their neck rims are different polylines, up to 2 mm apart: `hum_lod.neck_flap` adds a flap under the head's rim, 8 mm down and 3 mm in, inside the neck, with its rim vertex's keys and weights (Head_L1 +22 verts, Head_L2 +14). The V notch: Body_L2 had 10 cm "chest" triangles from the neck ring down the back (a face's region is its vertices' majority), hidden under any shirt: `hum_lod.neck_regions` makes a face touching the neck region neck (8 faces on Body_L2, none on L1) and `_sink` takes their far corners 5 mm in, or they poked through a dress at the shoulder. Both run in head_lod / body_lods on a rebuild; applied in place here. bmesh moves an extruded vertex twice in shape keys, so neck_flap writes keys with numpy. Sheets: renders/lod_neck_before_after.png, lod_neck_after.png.
+- Re-exporting Human_Hair.fbx: the pieces in Resources/HumanPieces store bone lists by name, and the old fbx (2026-10-24)
+  had 102 bones against today's 131. A skinned mesh whose bone list doesn't match its bindposes draws NOTHING, no error.
+  The mouth pass rewrote the lists on the 23 hair/beard/brow pieces in place (bones from the fbx's renderers). Four test
+  scenes keep saved hair renderers with the old lists and show no hair until rebuilt: Creatures_Test, Riders_Clips,
+  Riders_Test (and Humans_Showcase, rebuilt 2026-10-30 with the new `Tools/Humans/Rebuild Showcase Only`: scene alone,
+  stops if other scenes are open or unsaved. It also saves faces, so it needs this after a change to the face rules). `hum_export.export_hair` also takes every piece in HUM_Hair,
+  now including the strand cards that ship in Human_HairCards.fbx (178 MB instead of 88): export the old 65 by name until
+  the spike joins it.
 - Eyeball UVs are a front projection that overlaps the head UV square. They must stay on material slot 1,
   which the bakes skip.
 - MPFB macros move the whole head (height). Keys are anchored at the neck ring (`rig.neck_ref`).
@@ -315,7 +361,8 @@ Done: head + eyes, stylisation, UVs, paint masks, preview shader, 98 keys, rando
 - Then "the skirts ... are lifting too much, in an unnatural way" (the rigid panels: whole quarters turned with
   the thighs, the back hem flipped with the calf) -> Daniel chose a physics skirt. The 8 panel helpers are gone;
   a skirt ring replaces them (`hum_helpers.RING`): 12 columns round the hips, each `xh_skirtNN_hip` (hip ring ->
-  3 cm outside the legs at knee height) + `_knee` (-> the hem) + a weightless `_hem` tip. Weights: two
+  3 cm outside the legs at knee height; split by `_mid` since 2026-10-28, below) + `_knee` (-> the hem) + a weightless
+  `_hem` tip. Weights: two
   neighbouring columns by azimuth, hip link above the knee, knee link below, at most 4 bones a row (Unity
   skins with 4 and had dropped up to 14-23% of skirt rows' weight - Blender and Unity moved differently).
   Unity `HumanSkirt` (execution order 150) simulates the knee/hem points (Verlet, 60 Hz): target = hanging in
@@ -465,8 +512,542 @@ Done: head + eyes, stylisation, UVs, paint masks, preview shader, 98 keys, rando
   Thrust 0.45, Jab 0.30 normalized).
 
 - Skirt ring: tuned on the Run clip by eye (stiffness 0.15, stretch 3, lift 0.5, elastic 1.35 / 1.25,
-  thickness 0.05); the back hem kicks out in a pointed flap at the top of the heel kick. HumanHelperBones still
+  thickness 0.05). 2026-10-27 (Daniel: skirts "kicked back" when moving): a leg's push no longer turns into speed
+  (`kick` 0.3: Verlet had flung the cloth on past the heel) and a heel just below the knee point moves that point
+  too (`drape` 1, a segment collision: the hem had swung out round it at up to 5x the push). Walking, the pointed
+  flap at toe-off is gone (back hem 0.63 -> 0.50 m behind the hips at most); running, the hem no longer flips to
+  hip height, but a long dress still stands out behind like a bustle (the run's stride is longer than the dress;
+  a 25-40 deg cap on the back columns was tried: little gain, feet through the cloth). HumanHelperBones still
   carries the old panels' hang / raise code (unused now).
+- Cape chain (2026-10-27, "the way cloaks hang is weird"): the cloak's cut stands off the back like a shell (the
+  hull takes in arms swung back 30 deg; the chain's tail is 36 cm behind the pelvis). HumanSpringChain now turns
+  each link `drape` 0.75 of the way to hanging straight down, fading back to the cut between `trail` 1.8 and
+  3.4 m/s (so it still streams out at a run), and keeps the cape outside a worn skirt's ring (a dress poked through).
+- Cape re-cut (2026-10-27, same evening): the hull takes in the arms hanging only (`hum_cloak.ARM_SWING`, also
+  hum_plate `_back_cape`), flare 0.07 -> 0.045, 1 cm closer below the shoulders, and no wings in `_worn_under` (the
+  angels' folded wings had stood MSlim's cloak 4 cm further off). Cloak (12 builds), ElvenCape (6) and KnightCape (12)
+  rebuilt: the back now lies over the outermost garment it must clear (the hauberk: ~5 cm off a tunic, 8-10 cm off
+  bare skin) - seat 0.33-0.37 -> 0.19-0.21 m behind the spine line, hem 0.40 -> 0.28; from behind 0.70 -> 0.61 m wide
+  (KnightCape 0.86 -> 0.62). xh_cape_0..2 moved onto the new back line (y only, so the weights didn't change;
+  `hum_helpers.sync_bones` now moves offset helpers too). Exported Human_Body.fbx (new `hum_export.export_body`),
+  Human_Cloth_Cloak/Elven/BlackKnight.fbx (the only families weighted to the chain) and human_rig.json; config
+  unchanged. Unity HumanSpringChain: `drape` 1 now means the hanging pose keeps the cut's link directions as on an
+  upright body (`facing` + `restDirs`, set by HumanSetup) instead of turning with the torso - rigid on spine_03 the
+  walk's sway swung the hem 6-12 cm side to side like a board; it fades to `stream` 20 deg back at a run (`trail`);
+  the spine/pelvis capsules (`torso`) never push a point further out than the cut (their radii are wider than the
+  close cut); a skirt's ring pushes the chain straight back (it had shoved it sideways at a walk). Checks:
+  MedievalSetting Logs/ClothMotion `cut0_*` (before), `cut2_*` (after), `*_views_*` (6 angles incl. from below);
+  Blender scene CloakCut in humans.blend (old red, new blue, per build). Open: a long dress's hem still swings 0.5 m
+  behind at a walk and lifts the cape with it (the skirt sim); the arm swinging back passes beside / under the side
+  panel (no poke-through seen in the walk or run strips). MedievalSetting's Riders_Test / Riders_Clips scenes hold
+  baked (unpacked) humans with the old chain bones and bind data; their chains are off (no cloak) - re-make them if a
+  rider ever wears one.
+- Cape side chains (2026-10-27, night; Daniel: "when the arm swings backwards it clips over the cloak"): two more
+  chains, `hum_helpers.CAPE_SIDES` xh_cape_l/r_0..2, at `CAPE_SIDE_X` 0.24 out (the game's clips hang the hands 26-29 cm
+  out and swing them up to 12 / 29 cm behind the root at a walk), same heights and hosts as the centre (so the in-place
+  re-weight shifts nothing). `hum_cloak.with_chain` splits the cape from the centre (|x| < 4 cm) to the side chain
+  (|x| > 24 cm, the edges); `top_bones` caps cape rows at 4 bones (they reached 6). `sync_bones` added the bones (108),
+  `reskin` re-weighted all 90 cape meshes in place; exported Body, Cloak/Elven/BlackKnight, rig json (`springs` with
+  `side`). Unity: one HumanSpringChain per spring; a side chain also gets upper arm / forearm / hand capsules with
+  `pushBack` (push the point straight back, so a hand just outside the chain lifts the cape over it rather than pressing
+  it in); HumanFace / LookPreview / ClothMotionCheck handle all chains. The upright drape is now taken in spine_03's
+  frame without its lean (`upLocal`, `backLocal`, `restDirs` in that space; `facing` gone): it keeps the torso's
+  twist (the side panels had stayed put while a combat stance turned the torso) and never turns a link forward into a
+  back bent forward. Checked: game-camera close-ups (MedievalSetting Logs/ClothMotion `gamecam_centre.png` = sides
+  rigid vs `gamecam_sides.png`: the walking man's arms no longer bulge through the sides, the running arm no longer
+  lies over the cape), `cut3_*` strips and views. Open: deep attack lunges (attack_1h clip 1) bend the back through the
+  cape at the belt and the tunic shows (the 3-link chain is straight between shoulder blades and waist; link-middle
+  collisions were tried and didn't help); a raised elbow in the combat stance shows over the cape's shoulder from a high
+  camera (legit, above it). The creator's "cloak in the wrong spot" didn't reproduce (renders match the game).
+- 2026-10-28 (Daniel's in-game shots: club + shield, the right elbow through the cape's side in the combat stance):
+  the side chains start higher, root at the top of the shoulder blades (z 1.20 rest), first point at elbow height
+  (0.98), then 0.64 and the tip 0.30 (`_CAPE_SIDE`); the old first point at the waist was 15 cm below a bent elbow, so
+  the straight panel above it was pierced. `with_chain` now takes each chain's own heights (where it takes the spine
+  part over, and its link blend). Arm capsules 3 cm over the limb (0.085 / 0.075 / 0.075): an elbow out in the combat
+  stance passes the chain further out. Exported Body, Cloak/Elven/BlackKnight, rig json; installed, Rebuild Prefab Only.
+  Check (combat stance + shield-guard layer, steep camera behind; arm drawn over the cape, frames): heavy man 29 -> 4,
+  woman 5 -> 0, runs 8 -> 6 and 10 -> 1 against the side chains held still; the strong man's elbow stays out beside the
+  cape's edge in that stance (outside it, not through). MedievalSetting Logs/ClothMotion/compare/arm_combat.png.
+- Cape grid (2026-10-28, Daniel: "any chance we could increase the number of bones on the clothes?"): the three chains
+  became `hum_helpers.CAPE_COLUMNS`, five columns (the middle, 12 and 24 cm out each side: xh_cape_*, _lm_*, _l_*,
+  _rm_*, _r_*) of four links each (16, 18, 24, 30 cm: 1.18 -> 1.02 (elbow height) -> 0.84 -> 0.60 -> 0.30 m at rest), the
+  nodes on the cloak's back line (`_CAPE_Y`, the builds' mean per column). `CAPE_SIDES` / `CAPE_SIDE_X` are gone.
+  `with_chain` shares a row between the columns either side by x and between the links by height; `top_bones` keeps
+  4 bones with the arm's (upperarm, deltoid) favoured x3 - the 4-bone cap had dropped the arm share at the cape's side
+  from 0.085 to 0.016. Rig json `springs` carry `tip` (the last link against the one before: HumanSetup had
+  extrapolated the tail 6 cm high). Unity: one HumanSpringChain per column; every column off the middle gets its
+  side's arm capsules (`pushBack`); `neighbours` + `stretch` 1.15 keep columns from parting (a pushed column drags the
+  next). Check: the combat-stance count (arm drawn over the cape) is 17 frames of 41 on the heavy man against 4 with
+  three chains, but the renders look the same (edge frames along the cape's border); runs and walks unchanged. Open:
+  attack_1h's lunge still bends the back through the cape at the belt.
+- Skirt ring in three links (2026-10-28, Daniel: "skirts could also have at least 3 links, with different sizes, the
+  links closer to the waist are smaller"): `xh_skirtNN_mid` between the hip pivot and the knee point, 40% of the way
+  down (`RING_MID`, offsets from the thigh on the column's side, so it takes the thigh's per-build delta): links 14 /
+  22 / 32 cm in front, 13 / 19 / 32 behind; the knee link is the mid link's child now (`sync_bones` re-parents). Weights
+  (`redistribute`): hip link above the mean mid height, a 10 cm band to the mid link, the old knee band below - still
+  at most 4 ring bones a row (all 545 skirted meshes re-weighted in place, `rest_shift` keeping the build fit).
+  `ring_slack` measures three links (hip at the mid joint's height, mid at knee height, knee at the hem); config
+  `skirtSlack` has `hip`, `mid`, `knee` (the old `hip` value is the new `mid`). Blender `_ring`: the mid link turns with
+  the hip link seated. Unity HumanSkirt: three Verlet points per column (mid, knee, hem), each link elastic
+  (`elasticHip` for both upper links), the neighbours' limit and `kick` on all three; a leg still pushes the hips-to-knee
+  line as one link turning round the hips (the mid point rides along at its share) and the knee link with `drape`, so
+  the cloth session's tuning holds - only the cloth's own swing bends the mid joint. `SlackDown`: a short skirt (a
+  tunic, no cloth at the mid link) uses its hem's slack there. HumanSpringChain keeps the cape off all three links.
+  Exported Body (131 bones), Clothes, Elven, Leather, Orc, PaddedMail, Rags, Robes (every family with a ring skirt),
+  rig json, config; installed, Rebuild Prefab Only; the avatar's mapping is unchanged. Cloth Motion (FSlim dress): walk
+  0.49 / 0.27 m behind the hips (2 links: 0.50 / 0.26), run 0.54 / 0.38 (0.55 / 0.39), highest hem the same - the
+  strips look alike (MedievalSetting Logs/ClothMotion `skirt3_*`, sheet `skirt3_vs_before.png`). Still as before: the
+  get_up clip lifts the legs out of a dress lying down (the ring hangs in the character's frame).
+- Cloak shoulders (2026-10-28 evening, Daniel: "the cloak has bones on the shoulder area? Because I think that is the
+  area that is failing to move when the arms move, causing some clipping issues"). Two causes, both fixed:
+  (1) the cut: `_worn_under` left out every under-garment point more than 2 cm past the shoulder joint (the arms are
+  the hanging-arm proxy's), the shoulder caps too, so a tunic's sleeve top stuck out through the cloak's side over the
+  deltoid even at rest (MStrong, MHeavy, FSlim, MSlim...; ray test from the shoulder joint). The caps (within
+  max(11 cm, 0.55 x the joint's x) of the joint, from 5 cm below it up) are in the hull now; Cloak (12 builds) and
+  ElvenCape (6) rebuilt (`build_wardrobe`, the window on the Faces scene). MOrc keeps 3 cap points (1 cm).
+  (2) the weights: the cloth on the shoulders and the upper arm followed the arm ~55-70% (shoulder_share capped at
+  0.85, then 6 smoothing passes) and never the clavicle, while the sleeve under it does both. `reskin` now gives the
+  arm share - and the cloth lying on the shirt above the cape grid's roots (within 7-10 cm: the cloak is cut to clear
+  mail) - the build's own Shirt rows at each vertex's nearest point (`under_rows`, `smoothed_cape_weights`: spine and
+  grid smoothed 6 passes, the arm share 2; `top_bones` also favours the clavicles). KnightCape re-weighted the same
+  way (not rebuilt; strips over the Black Knight set look as before). Check, MStrong in the tunic outfit (Unity, shirt
+  and tunic points above 1 m that lie outside the cloak, mean per frame; old -> new): rest 0.4 -> 0, walk 1.9 -> 0.1,
+  run 25 -> 24, combat stance + shield 54 -> 7, attack_1h 37/116/54/39 -> 24/37/9/24, above 1.25 m none left (old up to
+  63). Sheet: MedievalSetting Logs/ClothMotion/shoulder_fit_before_after.png. Cloth Motion numbers unchanged. Left: the
+  run's arm swinging back still shows at the back of the shoulder; MOrc's tunic collar shows behind the neck at rest.
+  Gotcha: after an FBX swap whose meshes use other bones, Rebuild Prefab - the pieces kept the old bone lists and
+  skinned garbage.
+- Thighs through a tunic's front (same report: "frames where the thighs are raising beyond the part of the long shirt"):
+  not fixed. The pokes sit just below the belt (0.67-0.77 m), on rows 100% on the hip links: a thigh raised past ~50 deg
+  (run, attack lunges) comes up in front of the ring's pivots, and links turning round a fixed pivot can't clear it.
+  Tried and taken out: the mid joint riding the thighs (no effect, even with no slack) and sliding the pivots out by the
+  thigh capsule's reach (parted the front columns into a slit with the thigh in it: more pokes). Next idea: the tunic
+  rows just under the belt take a share of the thigh in front (a partial, local return of the panels Daniel rejected).
+- Buffers (same evening, Daniel: "making the arms and thighs a tad larger when calculating the cloak"): HumanSetup's
+  arm capsules on the side cape columns 8.5/7.5 -> 10.5/9.5 cm and the skirt ring's thigh capsules 5.5 -> 7 cm. The
+  cape and every skirt hang exactly as before at rest (Cloth Motion: same cape tip, dress, robe and mail idle numbers;
+  hems rise 4-5 cm more at a run). His outfit, poking points per frame: arms run 24 -> 19, attacks 24/37/9/24 ->
+  19/26/6/20, combat stance 7 (unchanged: not the simulated part); thighs run 3.7 -> 3.2, attacks 7.4/10.4/4.1/8.0 ->
+  6.2/8.8/3.8/7.2. A fatter hanging-arm proxy in the cut (6 -> 7.5 cm) changed no vertex: below the armpits the cloak
+  wraps only behind the arms (CLOAK_SPAN) and the shoulder caps are the sleeve tops now - not kept.
+- Shields (same evening, Daniel's screenshots of a run with the plank shield): the clipping he still saw was the shield
+  on the forearm through the cloak's side - the cape knew the arm only. MedievalSetting PlayerModel.ShieldCloth (game
+  side; player and NPCs both go through SetShield) adds three pushBack capsules down the worn shield's long side to every
+  HumanSpringChain (ends are child "ShieldCloth" transforms on the prop; removed with the shield), radius = a sixth of
+  its width + 10 cm (a side column carries the cloak's edge ~9 cm out past its point: without it the shield touched the
+  cloth but never the point). Plank shield in his outfit, shield vertices inside the cloak per frame, no colliders ->
+  installed: standing 60 -> 5.6, walk 29 -> 5.9, attacks 12.7/11.0/3.4/4.6 -> 4.6/6.9/3.3/5.6; the run stays ~19 (its
+  back swing reaches the rows that ride the upper arm, not the simulated part). Sheet: MedievalSetting Logs/ClothMotion/shield_cloth_gamecam.png. Any other held
+  prop that swings behind (a backpack? a quiver?) would need the same. (The shield numbers here were mis-measured: see
+  the metric gotcha below. The renders are right.)
+- Push-out on the GPU ("approach A", 2026-10-28, Daniel: "take a step back... proper cloth simulation?"; his order: A,
+  then D = our own GPU cloth sim, skipping Unity Cloth and Magica). HumanClothPush (on the prefab, from HumanSetup) +
+  Humans/Cloth `ClothPush`: every cloak vertex, and a hanging garment's hanging part (uv1.x = 0), is pushed out of the
+  limbs' tapered capsules (upper arm, forearm, hand, thigh, shin; radius = the thickest worn piece's 90th-percentile fit
+  round that bone + 6 mm, `HumanPiece.limbs` measured at setup) and the shield's (`SetProp`, from PlayerModel), by how
+  much deeper it sits than its rest position (uv2/uv3) lay in the rest capsule - cloth that hugs a limb at rest stays.
+  His outfit (MStrong, tunic + cloak + plank shield), points poking out per frame, off -> on: thighs through the tunic
+  run 4.5 -> 0.3, combat stance 9.8 -> 0, attack_1h 9.0/12.4/8.8/11.3 -> 0.5/4.7/0.9/0.5; shirt/tunic through the cloak
+  run 9.7 -> 1.9, combat stance 6.4 -> 3.0, attacks 11.6/13.8/2.9/11.8 -> 8.9/11.1/3.6/11.2; shield unchanged. Sheets
+  (Logs/ClothMotion): pushA_hips_zoom.png (the skirt's dark thigh patches gone), pokes_where_A.png (what is left: red =
+  shirt/tunic, yellow = shield, blue = thigh). Left: an arm raised high or swung back comes up through the cloak's
+  shoulder cap (the overhead attack, the shield arm in guard); a shield passed through the cape stays on the wrong side
+  (a stateless push can't tell); the shield count mostly counts a shield lying over the cloak, which is right.
+- **Metric gotcha (cost an afternoon):** `SkinnedMeshRenderer.BakeMesh(m, false)` + `transform.TransformPoint` scales a
+  human's skinned positions twice (the Clothes node is at the build's 1.105 scale): up to 16 cm off at the shoulders.
+  Skinned-vs-skinned poke counts stayed comparable (both off alike), but anything against a real world position - the
+  shield, capsules, a sim - was wrong, and A first looked useless. Use `BakeMesh(m, true)` + `TransformPoint`.
+- GPU cloth sim spike ("D", same night, not in the game): Runtime/HumanClothSim.cs + Shaders/HumanClothSim.compute;
+  Humans/Cloth draws `_SimOut` (world position + normal per mesh vertex, by SV_VertexID: `HUMAN_VERTEX_ID`, target
+  4.5) when `_SimOn` is set, the push-out otherwise. The skinned cloak is the target; particles (welded vertices) follow
+  it with a damped offset, keep its edge/bend lengths (Jacobi), stay within a max distance (1 cm on body bones, 12 cm on
+  the cape's chains), and are pushed out of HumanClothPush's capsules (`Capsules`) and off the worn layers' nearest
+  skinned points (shirt, tunic, trousers, body/head where shown; `BuildLayer` samples 2 cm cells). Skinning matches
+  Unity's exactly (0.00 cm). Not wired: HumanSetup/HumanFace don't build or bind it (`BuildCloth`/`BuildLayer` are
+  editor-only; a check binds it by hand); per-piece data would go in HumanPiece at setup, the body per build. First
+  numbers vs off: run sleeves 9.7 -> 2.4, but combat stance 6.4 -> 13.5 and attacks 11.6/13.8/2.9/11.8 ->
+  8.5/11.7/4.1/13.9 - untuned (the layer push and the capsules fight the shoulder rows).
+- Sim tuned (same night, Daniel: "let's try it"). MedievalSetting Tools: `ClothPokeCheck.Run(variants)` (editor script
+  next to ClothMotionCheck) counts shirt/tunic/shield points out of the cloak per frame for off / A / sim variants, with
+  one normal source for all (the welded faces' average: the authored normals alone moved counts by a third). Sum over
+  run, combat stance, attack_1h 1 and 3: off 46.2, A 31.7, sim first cut 33.5, sim without capsules 29.6 (the layers do
+  the work), now 25.8 = defaults in HumanClothSim: 6 substeps x 4 Jacobi pairs, layer gap 8 mm, deep 6 cm, capsules
+  2 cm thinner than the fits (full size they push the cape at rest). Per clip A -> sim: run 3.1 -> 3.6, stance 6.8 ->
+  6.1, attacks 10.7/11.2 -> 8.8/7.3. Sheet Logs/ClothMotion/sim_vs_A.png (top A, bottom sim): draws clean. Compute
+  normals face the skinned ones (a face wound the other way no longer flips one).
+  To try it: play mode, Tools/Game/Checks/Cloth Sim on the Player (Ctrl+Alt+C) - the player's cloak simulated, again:
+  back to A; it rebinds when the clothes change (`HumanClothSim.Follow`, editor only: the data is built from the
+  meshes). Not in builds yet: the data must move to HumanPiece at setup (and the body per build).
+- Daniel's play test (2026-10-29): "I could not see a difference" between A and the sim. Editor.log: the second
+  Ctrl+Alt+C bound and ran clean; the first was pressed with no cloak bound yet, and the rebind from LateUpdate failed:
+  the Human FBX meshes are not Read/Write, and play mode refuses their vertices inside the player loop (a menu call
+  reads them fine). Verdict: the sim buys nothing visible over A at far more cost. PARKED (his call, 2026-10-29): A
+  ships; HumanClothSim, the compute and the shader's _SimOn hook stay, off unless the switch adds it. The rebind now
+  goes through EditorApplication.delayCall (HumanClothSim.Rebind), so the switch also starts when a cloak is put on
+  later. To ship it one day: data into HumanPiece at setup (body per build), NPCs, LODs, a GPU cost check.
+- **Upright neck** (2026-10-29, Daniel: "Isn't the neck too forward?"): the rest skeleton's neck_01 leans ~25 deg
+  forward of spine_03 (head 24 deg back to keep the face level), and Humanoid takes the avatar's reference pose as
+  every muscle's zero; the bought clips nod the neck down (-0.4..-0.5) and the head up (+0.4..+0.5) on top of it, so in
+  Kevin idle/walk/run neck_01 -> head leaned 39-44 deg from vertical (20 at rest), the head 9-11 cm ahead of the chest
+  (21 running). Fix: `HumanSetup.UprightNeck` (in ConfigureModel for the body, `NeckUpright` 20) stands the avatar's
+  reference neck_01 up 20 deg and turns the head back 20, from the model's own rest rotations (never accumulates);
+  meshes, bind pose and garments untouched. Kevin clips now 19-22 deg, head 7.5-7.9 cm ahead (18 running), face pitch
+  unchanged (within 1 deg). Our clips keep their poses exactly (Walk, Sword_Slash, Sit_Idle, Zombie_Shamble,
+  MammothDriver_Idle measured before/after). **Gotcha:** a CopyFromOther clip importer keeps its own copy of the
+  avatar's description, refreshed only when sourceAvatar is assigned again - a plain reimport kept the old neck (the 15
+  MammothDriver clips, which human_clips.json doesn't list, moved 20 deg until re-assigned); `ReimportAvatarClips`
+  re-assigns and reimports every clip under Animation that uses the body's avatar. Applied in MedievalSetting
+  (Human_Body.fbx.meta + 43 clip metas; `HumanSetup.ApplyUprightNeck()` does it without a prefab rebuild). Hoods, mail
+  coif, plate gorget, dress + cloak checked side by side (Logs/HairCards/neck_collars.png): no new clipping. It helps
+  hair too: hair is skinned head -> neck_01 -> spine_03 by height, so the craned neck stretched it; now long hair falls
+  on the back and the ponytail hangs at the nape (renders/neck_hair_motion.png). Not play-tested.
+- **Hair spike: strand cards** (2026-10-29, Daniel: not happy with the hair, wants "a complete new hair system", a new
+  material and hair "physically reacting like cloth"; he picked strand cards over better solid locks). Spike pieces sit
+  NEXT TO the clump styles (nothing old changed): Hair_LongStrands, Hair_PonytailStrands (+ _L1, _L2).
+  - Blender `src/hum_cards.py` (scene **HairCards** in humans.blend: old | new as collection instances; `gallery()`
+    renders renders/hair_cards_gallery.png). The style recipes stay: `hum_styles.hair_spines` (split out of
+    hair_parts, same output) gives the guides; a style = the old cap shell + 3 card layers (inner dense, outer locks,
+    wisps; `LAYERS`), 3 verts a row (a shallow trough), cards beside the face narrower. Atlas `T_Hair_Cards`
+    (`build_atlas`, numpy, 8 columns: base / locks / wisps; R shade, G strand id, A coverage). UVs: UVMap, Clump,
+    CapCut, HoodCut, **Guide** (uv4: x = the row's particle, -1 = cap/band; y root -> tip). Gotcha: a FLOAT2 *corner*
+    attribute is a UV map in Blender 4.4 (it shifted CapCut to channel 3): the guide is kept as a POINT attribute and
+    written as UV 4 after write_cap_coords (`write_guides` asserts the order). `build_all()` (Faces scene active: the
+    Surface Deform bind needs the object in the view layer) binds the face keys, skins with hair_weights; L2 = a copy
+    of the clump style's L2; `export()` -> export/Human_HairCards.fbx (apart from Human_Hair.fbx).
+  - **Ponytail redone** (Daniel: "That ponytail mesh is horrible, we need a new one" - the old tail was a flat fan
+    sticking straight back): `tail_parts` = a round bundle from a tie on the hair, out a little then hanging down the
+    neck (kept off head/body), fuller below the tie, tapering; rings of cards facing out round the axis (twisting a
+    little), a hair-wrapped band over the gather. The L2 copy still has the old tail (40 m away).
+  - Unity: shader **Humans/HairCards** (Shaders/HumanHairCards.shader): atlas cut at 0.5 (Install sets mip "preserve
+    coverage"), wrapped diffuse + two Kajiya-Kay highlights along the bitangent (Install imports Mikktspace tangents;
+    5 of 5,256 card verts off the strand), the cap shell darker (_CapShade) and nearly without highlight, highlights
+    only on a card's lit side (first cut blew the crown out white), own ShadowCaster/Depth passes that clip (hidden
+    hair no longer casts shadows). Sim **HumanHairSim** (+ .compute): a particle per card row; world-space Verlet
+    that damps only the swing relative to the skinned target (damping the world motion acted as a gale: walking hair
+    streamed back), a little drag, eased back to the target (strong at the root), strand lengths (Jacobi), max
+    distance growing along the strand, kept off the worn layers (HumanClothSim.BuildLayer: body, head, clothes; never
+    deeper than the target lies). Substeps adaptive (`maxStep` 1/240 s; at 1/120 s a running crown flew apart) and the
+    knobs are per 1/240 s (same motion at any frame rate). The shader moves each vertex by its row's particle
+    (`_HairSim`, target / position / rotation) in every pass.
+  - Editor: Humans/Editor/HumanHairCardsSpike.cs, **Tools/Humans/Hair Cards Spike/Install** (FBX import, atlas, material
+    M_HumanHairCards, pieces into Resources/HumanPieces). HumanSetup's Rebuild deletes pieces it didn't cut: run Install
+    again after one. The prefab's HumanFace.pieces list is untouched: `HumanHairCardsSpike.Offer(hf)` adds the spike
+    pieces to an instance. MedievalSetting `Tools/Game/Checks/Hair Cards/` (Game/Scripts/Editor/HairCardsCheck.cs):
+    Gallery (Logs/HairCards/gallery.png: old | cards, 6 views incl. the game camera), Motion (walk, run, stop; sim off
+    / on strips + how far strands trail), Sim on the Player (play mode: puts LongStrands / PonytailStrands on the player
+    and simulates it).
+  - **Long redone as a drape** (same day, Daniel: "it is not just the material, the mesh is also bad. Improve the mesh
+    of the Long style" + thick and thin; "You can use more faces for the hair"): the flow-grown Long hugged the skull
+    (a wet helmet), narrowed into a V below the occiput and hung stringy temple locks. `src/hum_drape.py`: strands
+    hung under gravity (follow-the-leader lengths, 140 passes) over the head inflated by the hair's `volume` (signed
+    distance grids of the ear-domed head and the body, 6 mm cells, ~6 s once per head: cache them on the HeadFrame),
+    stiff for 5 cm off the root along the comb direction, kept out of a face zone (in front of the ears, below the
+    hairline, nearer the middle than the eye's outer corner), sliding off the shoulders (behind; the front roots in
+    front), resting 2 cm off the body (over a shirt: at 1.2 cm the shirt showed through in patches), cut at a ragged
+    hem (collarbone at the front, shoulder blades at the back) or where it runs 20 cm out over a shoulder, gathered
+    into locks toward the tips, settled. `hum_cards.DRAPED` holds the two variants (volume, spacing, card width,
+    clumping, layers): **LongStrands = thick** (3 layers, 21.8k tris L0 / 3.7k L1, 4,912 particles) and
+    **LongThinStrands = thin** (flatter, less dense, the same 3 column groups; 14.0k / 2.4k, 2,870; clumped 0.6 on the
+    locks' columns it read as wet strings over skin, now 0.25). Cards up to 24 rows (smooth bends). Skinned with
+    `draped_weights`: hair_weights, then where the hair lies on the body below the neck the body's own weights there
+    (neck, spine_02/03, clavicles - not the arms; 4 bones). Shader: highlights 0.14 / 0.2 and less on deeper strands
+    (straight hanging hair has one strand direction: an even highlight read as silver sheets, from below most).
+    Sim: hair is pushed at least 2 mm out of any worn layer even where its target lies inside (a cloak, a shirt).
+    **Open:** skinned only (no sim: LOD1/LOD2, builds), running still lets the shirt show through at the shoulder blade
+    on the side the arm swings back (the shirt follows the arm there; a wider body-weight fade made it worse); the sim
+    fixes it, so the cure is the sim on LOD1 and in builds. From the front the hair goes behind the shoulders (the
+    slide); thin shows slivers of skin between cards at the sides; a grey sheen from below. Sheets:
+    renders/long_gallery_round.png (old / thick / thin), renders/long_motion_round.png (thick skinned / thick sim /
+    thin sim).
+  - **Sim in builds** (same day, Daniel: "Sim in builds"): no mesh is readable in a build, so nothing the sim needs
+    is read from one at runtime any more. Setup (`HumanHairCardsSpike.Install`, ~20 s) stores indices and skinning only:
+    `HumanPiece.hairSim[lod]` (a particle's mesh vertices, strand parent, path, 4 bones) for LOD0/LOD1 of the spike
+    hair, `HumanPiece.simLayers[lod]` (one vertex a 2 cm cell, region, skinning) on every `Cloth_*` piece, and
+    Resources/`HumanHairSimData` (the compute shader, so builds carry it, + Body/Body_L1 and Head/Head_L1 layers). At
+    bind the renderers get `vertexBufferTarget |= Raw`; once drawn, `RestHair`/`RestLayer` read Unity's skinned vertex
+    buffer (root bone's space at unit scale: TRS(rootBone.position, rotation, 1), measured 0.000 cm vs BakeMesh) and
+    undo the skinning with the palette it was drawn with (last frame's in play; a check tool renders the pose it ticks):
+    the face and build keys come along. Targets skinned from that rest match Unity's skinning to 0.001 mm. One thread
+    a strand runs every substep (`Simulate`): 5 dispatches a frame per run instead of ~40. Lengths are split between
+    neighbours (Gauss-Seidel, 3 passes): follow-the-leader (all on the child) fed energy into Verlet and the hair
+    exploded into curls when walking. A layer renderer with no skinned buffer (not drawn: boots under a close-up) is
+    left out (points moved far), not waited for (it kept the sim from ever starting). `HumanFace.Apply` ends with
+    `HumanHairSim.Ensure`: anyone wearing a piece with sim data gets the component (play mode); a run per LOD (0, 1)
+    ticks while its hair is visible and within `simDistance` 25 m of Camera.main, restarting on its target when it
+    comes back; every 20 frames the worn renderers and face keys are checked and it binds again on a change. Checked in
+    edit mode: LOD0 and LOD1 through the build path (no sim-off patches on the back any more, mean 1.2 / 1.7 cm off the
+    target). **Not checked:** play mode (Ensure's frame timing) and a real build; no GPU cost measured; no NPC wears
+    the spike styles (they are offered per instance, not in Human.prefab's list or the config), so a build only shows
+    them through the check menu.
+  - **Long round 2** (same day, Daniel: "Do you think the long hair looks good? ... something feels off", then "Rework
+    everything necessary"). The critique (renders/long_critique.png): a box hung from the forehead's hairline that hid
+    the face in profile, sides cut at the neck while the back went on (a mullet: the 20 cm "reach" cut), a halo of dark
+    wires over the crown, hair floating 2 cm off the body, a silver-grey underside, skin slivers in the thin one.
+    - Drape (`hum_drape`): roots on the cap shell (recipe cap + 1.5 mm), the clearance growing from there, half of it
+      over the top and combed down onto it (`crown_k`, hug); front/top by how far ahead of the crown a point is
+      (`front_of`, not the angle round the head: near the top that swung between neighbours - chevrons); the front
+      hairline swept back and up the brow, the sides hardly back; below the hairline nothing ahead of the face line
+      (temple corner -> just behind the ear's front at the jaw, `face_line`): the profile shows. Roots ahead of the top
+      of the head (about the front third) slide off the shoulder in front - locks over the chest - the rest behind; the
+      slide only above the armpits. Rests 1.2 cm off the body or 5 mm off a shirt (Cloth_Shirt_FSlim taken back to the
+      base body, `unbuild`; an open mesh, so only within 4 cm of the body). Hem: front locks shoulder - 12 cm, back
+      shoulder - 17 cm and a 4 cm U by where the tip hangs; also cut where a strand rises or folds past the head; draped
+      twice (the second hangs each strand only to its hem + 3 cm: the extra length piled on the hips in zigzags).
+      Clumping by arc length with each mate's pull held past its end (a mean over mates "still that long" jumped), never
+      across the shoulder split; settling smooths along the strand.
+    - Cards (`hum_cards`): rows spread by bent length (`bend` 0.03 m/rad, up to 30 rows; stubs under 3 mm ignored);
+      facing off the head near it and off the body where they lie on it (`card_normal_fn`: front locks faced sideways,
+      edge-on to the sun, and read mauve); a fill layer under the rest (`FILL`: wide dense cards, sides and back, not
+      clumped) so gaps show hair, not skin; thin cards 3 cm wide. Card rows share their bone weights.
+    - Bug: the draped styles were never skinned with `draped_weights` - `split("_L")` cut "Hair_LongStrands" at "_Long".
+    - Builds: the head's Surface Deform keys (Feminine, Thin, Slight...) carried the front locks 3 cm back into every
+      female chest. `draped_keys`: a card row takes the head's key offset while on the head, carries the last one down
+      the free hang and takes the body's own key offset where it lies on the body (body keys the head lacks are added).
+      `build_fit` then fits every `hum_builds.BUILDS` build as the garments are: its rows (key mix + bone moves) pushed
+      out of that build's body and `Cloth_Shirt_<tag>`, the body keys corrected (least squares, the smallest change),
+      blurred over 2.5 cm (rows pushed one by one out of the shirt's folds crumpled the tips). Worst build's mean refit
+      3.3 cm (thick). The 16 builds' distance grids cache per session (`_BUILD_FIELDS`, kept over a reload); a build of
+      both styles takes ~145 s - longer than an MCP call: run it from a `bpy.app.timers` callback that logs to a file.
+    - Shader: diffuse only (`UniversalFragmentBlinnPhong`; the shared PBR path's Fresnel turned the underside and the
+      crown's edge silver-grey), both faces lit with the outward normal (flipped, the far side's cards over the crown
+      faced away from the light: the dark wires), the primary highlight tinted toward the hair colour (`_Spec1Tint`
+      0.7: white over a lock of parallel strands read lavender). Install now copies the shader's float defaults onto
+      M_HumanHairCards (the saved material had kept its first numbers).
+    - Sim: a layer point's plane holds only `disk` 3.5 cm across and not for hair resting more than `inside` 1.5 cm
+      behind it (an endless shoulder-top plane lifted the front locks; walking flung them forward). `HairSim.hold`
+      (Install, from the prefab head's vertices): a strand's length lying on the head; the follow and max distance
+      count from there (by path alone the crown sagged and flapped when running: dark blotches). Run + stop: mean
+      1.0 cm (thick) / 0.9 cm (thin) off the target.
+    - Now: thick 27.8k tris (L1 4.5k, 6,423 particles), thin 18.4k (L1 2.5k, 3,974). Sheets in renders/:
+      long_rework_before_after.png, long_round2_builds_thick/thin.png (9 builds, shirt), long_round2_motion_thick/
+      thin.png, long_round2_lod1.png. Open: not play-tested; the sunlit part of the front locks reads a little paler;
+      thin hair still lets an ear show from the game camera now and then; alpha edges alias at distance.
+    - **Round 3** (same day, Daniel: "Keep working on it"):
+      - The part showed a ~4 cm band of bare cap and the hairline the cap's edge: each card's first row was sunk 2 mm
+        and its edges dipped from the root, so its first centimetre lay under the cap. Draped cards now start flat
+        (`root_sink` 0, the trough growing in over `dip_len` 5 cm). Atlas strands start a little apart (`stagger`,
+        their own random stream), so a card's root fades in. Front roots get half the volume (`vol_k`): the temples
+        had puffed and rolled.
+      - `_fringe`: short wisp cards just in front of the front hairline (a level ray at the HAIRLINE table's height
+        - the nearest skin point slid 1.5 cm down the brow). `cap_guides`: the cap's Guide.y = how far its border
+        dissolves (1 on it .. 0 a centimetre in); the shader cuts the shell there along its own strand texture.
+        Both barely show: in a closer render the hairline already read fine (the head's scalp tint softens it); the
+        hard line was mostly the gallery crop's 3x zoom.
+      - The pale front locks were the primary highlight: a flat lock of parallel strands catches it all over (with
+        it off they were a rich brown). Primary 0.14 -> 0.06, tint 0.9, secondary 0.2 -> 0.25 (hair-coloured), and
+        `_Exp1` 120 -> 300 with `_ShiftJitter` 0.6, so a lock catches it in streaks; dark hair gets it stronger and
+        whiter (`dark` from the base colour's linear luminance: a mid brown is ~0.06 there, not 0.26 - the first cut
+        treated brown as dark). Colour lineup renders/long_round3_colours.png (blonde, black, red, grey, brown).
+      - Checked again: 9 builds (long_round3_builds_thick/thin.png), run + stop (long_round3_motion_thick/thin.png,
+        0.9 cm mean off target), gallery long_round3_gallery.png. Thick 28.0k tris (L1 4.4k), thin 18.7k (L1 2.5k).
+        PonytailStrands shares the material (new shading) but wasn't rebuilt (its cap has no dissolve data yet).
+      - **Parting** (Daniel: "Shouldn't we have a line in the middle of the head that divides the hair for each
+        side?"): `parting()` gives the cap shell's vertices their signed distance across the line (in half widths,
+        `PART_HALF` 1.7 mm, wandering a little front to back, tapering out short of the crown: `part_along`); it rides
+        in HoodCut.y (written in `write_guides`; signed, so it interpolates exactly over the shell's centimetre
+        triangles) and the shader cuts the shell there with a ragged edge - the scalp shows. Not in the shadow pass:
+        lit, the line read as a bright painted stripe. Card roots keep `PART_CLEAR` 4 mm off it, the fringe starts
+        7 deg off the middle, and over the top the shell's strand texture runs away from the line (it ran front to
+        back there). `part_x` in DRAPED (default 0) for side partings later. renders/long_parting.png.
+  - **CropStrands** (2026-10-30, Daniel picked Crop as the next style - the most worn: 37 named NPCs, 16 % of random
+    men; the clump Crop was spiky feathers with a jagged fringe). Short hair doesn't hang: `hum_cards.SHORT` +
+    `short_parts` / `grow_short` lay strands on the scalp along a flow (no gravity), stepping 5 mm tangent to the head
+    and set back at a clearance growing from the cap to the style's `volume` over 2 cm; lengths by region
+    (`short_lengths`: top 5.5, fringe 4.5, sides 2, back 3 tapering to a 1.2 cm nape, a little ragged); the fringe stops
+    5 cm above the eyes give or take a few mm a strand (one line read as a bowl cut) and short of the ears. Flow
+    (`short_flow`): brushed from a whorl at the top of the back (`crown` 5.5 cm behind / 2.5 cm under the top),
+    spreading less sideways over the top (`fan`) and spiralling round the whorl (`swirl` 0.9 over 5 cm). Whorl lessons:
+    every flow over a head has one (hairy ball); the head's own crown point fanned the top every which way (patchy and
+    curly from the game camera), down the back it stared out of the back view, a strong swirl read as a cinnamon roll,
+    and cards all running outward from their roots left a disc of bare cap in its middle - `whorl` adds ten short cards
+    spiralling over it. Short cards: 1.6 cm wide on 1 cm (2.2 cm read as petals), `v0` 0.35 (the root shadow starts that
+    far along: rows of short cards' dark roots read as fish scales; the atlas's soft starts stay - skipped too, root
+    edges cut hard), `cap_light` 0.5 (the shell's uv1.y past 1 lightens _CapShade: more of it shows under short hair).
+    Install skips the sim for hair no longer than 9 cm (`ShortHair`). 15.8k tris (L1 3.0k; L2 the clump copy).
+    MedievalSetting HairCardsCheck's gallery has the Crop pair (on MStrong). Checked: 5 faces / 3 builds (LOD0, LOD1, the
+    game camera, behind), brown + black, under Cap / Hood / coifs / CloakHood / PlateHelm
+    (renders/crop_lineup.png, crop_compare.png, hair_cards_headgear.png). Not play-tested; not in any NPC config.
+  - **SweptStrands** (2026-10-30, the next men's style while Daniel slept: "try to keep going"). The short builder with
+    the Swept recipe's own "back" flow (no `crown` in SHORT: `short_flow` falls back to `hum_styles.flow_fn`; its
+    whorl lies on the face, none in the hair). Lengths top 8.5, front 10 (the front's hair rides back over the top),
+    sides 4.5, back 5.5, nape 2 cm. Two Swept-only keys: `down` (100..140 deg round the head the flow turns straight
+    down - a constant "back" projected onto the back of the head wrapped the sides round into a dark knot at the nape)
+    and `hem` (strands stop 6 mm under the hairline, ragged -4..+8 mm a strand: they hung on down the neck in a lump).
+    19.1k tris (L1 3.0k; L2 the clump copy). HairCardsCheck gallery has the Swept pair. Checked: 5 faces / 3 builds /
+    black, brown, blonde, red, grey (LOD0, LOD1, the game camera), under Cap / Hood / coifs / CloakHood / PlateHelm
+    (renders/swept_compare2.png, swept_lineup.png, swept_headgear.png; swept_compare.png = the knot). Known: the
+    forehead hairline is the head's straight HAIRLINE (shared with every style), crisp on a slicked-back style.
+    Not play-tested; not in any NPC config.
+  - **PonytailStrands scalp** (2026-10-30, same night): the scalp moved from the clump recipe's guides
+    (`style_parts`) to the short builder; the round tail (`tail_parts`) is unchanged and now added by `short_parts`
+    for any recipe with a "tail". Strands lie on the scalp along the recipe's "tie" flow and stop at the gather
+    (`gather` 9 mm round a point 6 mm out from the skin, as the tail's own gather - on the skin it was out of reach of
+    strands lying 5-7 mm out: they circled it to their full 30 cm, a mess round the tie and 200 s builds, now 80 s;
+    they also stop once they pass it). `over_ears` lifts them over the ears (the ear stop cut the temples short).
+    Cards narrow to 40 % at the tie (full width, converging cards crossed in a patchwork), are flat (`curve` 0.02: the
+    short styles' trough dipped the edges of cards lying this close through the shell - wiggly cut lines, a
+    wood-grain look) and have no sparse outer layer. The shell's texture runs to the tie (`tie_uv`: polar round it,
+    25 tiles round, unwrapped per face so there's no seam; it fell down the sides across the hair) and is nearly as
+    light as the cards (`cap_light` 0.85). 20.0k tris (L1 3.6k). Checked: 5 faces / 3 builds (FSlim, FStrong,
+    FHeavy) / 5 colours, the game camera, under Cap / Hood / coifs / CloakHood / PlateHelm (the tail hangs out under
+    the cap and helm; hoods hide it) - renders/ponytail_check2.png, ponytail_compare.png (before the tie fix),
+    ponytail_headgear.png. Motion (HairCardsCheck.Motion, sim): the scalp holds (whole strands within 2 cm of the
+    head: `hold` = their length), the tail swings; mean 0.1 cm off target, max 18.2 cm at the run's stop. Not
+    play-tested.
+  - **Hold fix** (same night): a flick of strands over the gather at the run's bounce (ponytail and bun) was scalp
+    hair going free - `HairSimOf`'s on-head test took every other head vertex within 2 cm, and the game head's 5k
+    vertices are sparse over the top (hair lying flat on the crown measured up to 3.1 cm away). Now every vertex,
+    within 2.5 cm: the bun's scalp has no free particles (was 734), the ponytail's free ones are its tail. LongStrands
+    re-checked: mean 0.8 cm off target (was 0.9).
+  - **BunStrands** (same night; Bun is worn by 17 configs as often as Ponytail): the ponytail's scalp builder pulled
+    to the recipe's crown tie (`gather` 2.8 cm: the bun's foot), then `bun_parts`: three interleaved spirals of cards
+    (0.7 turn each, staggered ends) wound three turns over a squat dome (radius 3.4 cm, height 0.75x) from its foot to
+    a rosette at the top, facing out from its middle, over a light core shell (drawn like the cap) so nothing shows
+    through. The old clump bun was a ball of random great circles (loops of wire). The bun doesn't swing: its cards'
+    Guide x is -2 - HairSimOf skips negative guides, and the shader now reads only -1 as the cap shell (-2 = a card
+    left out of the sim; HumanHairCards.shader, `shell`). 18.6k tris (L1 3.3k). Motion: max 0.3 cm off target.
+    Under every headgear the bun is cut away (CapCut/HoodCut), nothing pokes through. Renders: bun_compare.png,
+    bun_headgear.png. Checked on FSlim brown only (not the 5-face lineup). Not play-tested; not in any NPC config.
+  - **SidePartStrands** (2026-10-30, Daniel: "Go on" - the next style). SidePart's recipe is the "part" flow that
+    covers the ears, Long's own, so it's a DRAPED entry, not a SHORT one: Long's drape with the parting `part_x` 2.8 cm
+    off the middle (cut in the cap by `parting()`, passed to `comb_dir` now, and to `_fringe`, which skips the
+    parting's few mm and starts 2 deg off the middle) and short. No hem: `length` as SHORT's (top 12, front 10, sides
+    7.5, back 8.5, nape 4.5 cm; `ragged` then a fraction, as there) hangs each strand only its own length - the top
+    falls over the ears to the lobes, the back to the collar. Locks don't mix across the parting (`clump` groups by
+    its side). `cap_light` 0.4 as the short styles'. Two fixes on the way:
+    - Behind the parting's end the hair kept splitting along its line: a dark seam down the back, a tuft at the
+      crown. `comb_dir` (side partings only; Long's centre one unchanged) fades the sideways comb out between 1 and
+      4.5 cm behind the top of the head, and `parting()` turns the shell's texture down the back there too.
+    - A strand at the very top folded on itself (the tuft that stayed): the body's distance grid had an "inside" speck
+      over the head - the body is open at the neck and a node nearest that rim took its sign at random (-1.6 cm, a
+      push of 2.8 cm sideways). `Field.outside_above`: nothing above the body's top is inside. Shared code: Long's
+      drape gets it on its next rebuild (not rebuilt yet).
+    10.8k tris (L1 1.6k; L2 the clump copy), 2,185 particles; simulated (12 cm > ShortHair). Fitted to the builds,
+    worst mean refit 0.5 cm. Checked: 5 faces / 3 builds (MSlim, MStrong, MHeavy) / 5 colours, LOD0 + LOD1, the game
+    camera; under Cap / Hood / coifs / CloakHood / PlateHelm (under the cap it shows below the rim, the rest hide it);
+    motion (sim) mean 0.0 / max 1.7 cm off target. Renders: sidepart_compare.png, sidepart_lineup.png,
+    sidepart_headgear.png. Its shape is a full mop over the ears (as the recipe's cover_ears), not the old style's
+    long fringe swept over one eye - the drape keeps hair off the face. Not play-tested; not in any NPC config.
+  - **CurlyStrands** (2026-10-30, Daniel: "Curly next"; the clump Curly was a mass of blobby leaves). Ringlets: the
+    short builder's strands (top 4, front 3.5, sides 2.8, back 3.5, nape 2 cm), each turned up to 75 deg off the flow
+    (`turn`: curls lie every which way, not combed), then wound into a coil round its path (`coil()`: a turn every
+    1.6 cm, either hand, radius growing in over its first 8 mm) - a card faces out from the path, so it wraps the
+    ringlet as a spiral band with its strands running round it (`_facing`; 6 rows a turn at LOD0, 3 at LOD1, where
+    the facing bends 60 % to the scalp's normal: big facets lit round the path showed their undersides as dark
+    specks). A layer's 5th item is its coil radius: two layers, 5.5 and 6 mm (4.5/5 left the cap showing). No flat
+    fill: its straight strands showed between the curls as slicked patches. The cap is the problem with curls -
+    its tiling strand texture read as a combed base under blonde and grey curls:
+    - `cap_light` below 0 (only Curly): the shell's uv1.y is negative and HumanHairCards.shader darkens it to
+      (1 + uv1.y) of _CapShade (-0.45: 0.33) - the shadow between curls - while a pixel covers under 1 mm of hair, and
+      lights it fully (the hair's mass) by 3 mm (`px` from the camera distance, projection and screen height). Dark at
+      every distance, the gaps took over from the game camera: blonde read as a dark head with blonde specks, and LOD1
+      (lighter) popped. Every other shell has uv1.y >= 0.35: unchanged.
+    - Not simulated: the coil cards' guides are -2 (as the bun's). Wound, a 4 cm curl's path is 15 cm, past
+      ShortHair - 4,252 particles, motion strips identical to skinned, one curl straying 5.2 cm.
+    - Density (Daniel: "some areas are unpopulated"; LOD1 may stay sparse from the top-down camera). Measured with
+      blonde curls over a black cap (_CapShade 0 by MaterialPropertyBlock; black / (black + blonde) pixels per view,
+      renders/curly_coverage.png). The cause was the roots: `sample_roots` only picks head vertices, sparse over the
+      skull, so tighter spacing and `fill` never reached the crown (0.8 spacing: back 18.5 %, top 20 %, whatever the
+      density). `scalp_points` samples the scalp's faces instead, for LOD0's coil layers and `fill` only (other styles
+      keep `sample_roots`): 4 mm candidates 305 -> 2,110. Now `spacing0` 0.9, `fill` 5 mm (`fill_gaps`: 62 curls),
+      front 4.7/3.8 %, 3/4 6.5/5.8, side 8.5/7.8, back 10.3/9.8, top 7.9/6.8, 3/4 back 8.8/8.2 (man/woman).
+    - The fringe line is off (`fringe_z` -1, `hem` 6 mm): it cut the temples' curls to 5 mm stubs. `turn` 75 and a whorl
+      of 16 broke up the lines running from the whorl. These recipe keys are shared, so LOD1 took them too (3.3k -> 3.6k).
+    - Grain from afar: LOD0's coils lit by their own normals (out from the path) are half dark sides; once a pixel holds
+      a curl's worth, each is a speck (blonde/grey 12-15 % dark pixels at 9 and 5 m, cap and root shadow not the cause;
+      tested by overriding them). The coil cards' guide is now -3 (still out of the sim; a bun stays -2). HumanHairCards.shader
+      fades them from 1 to 3 mm a pixel: normal faced to the viewer + bent 0.5 toward it, wrap 1, highlights x 0.25 (they
+      were black hair's bright specks: 9.4 -> 1.7 % at 9 m). Now blonde 1.8 % dark at 9 m, 1.6 % at 5 m, LOD1 2.8 / 1.8;
+      medians 155 / 158 and 152 / 153, so no pop. Close-ups unchanged: 3 of 1.17M pixels differ at 0.6 m (by at most 12
+      summed over rgb), none at 1.2 m. At a 30 deg lens LOD0 lasts to about 12 m (size 1.66, transition 0.25), so these are
+      the distances a player sees. LOD1 at 3 m shows dark cap patches, but it isn't drawn that close.
+    - Cost: LOD0 went from 6 to 5 card rows a turn, Daniel's pick (`coil` is pitch, rows at LOD0, rows at LOD1): 27.5k tris
+      (-13 %) on the head after the eye pass. Coverage front 6.2/5.3 %, 3/4 6.6/5.5, side 9.7/8.7, back 11.6/11.5, top 9.4/8.1,
+      3/4 back 9.5/8.4 (man/woman; 6 rows 5.2/4.1, 7.3/6.5, 9.3/8.7, 11.6/10.9, 8.6/7.4, 9.9/9.1): some views worse, some
+      better, so root placement moves as much as the rows do. At 0.6 m the coils are visibly more angular and hatched (renders/
+      curly_rows_6v5.png, 6 rows left of each pair); at 1.2 m the same to the eye. At 9 and 5 m (curly_rows_distance.png,
+      6 / 5 / 6 / 5) dark pixels, under 0.6 x the median: blonde 1.9 / 2.7 % (6 rows 1.5 / 2.6), grey 1.7 / 3.0 (1.0 / 2.0).
+      Black's dark and bright figures mean little: its median is 10, but it does show specks on either build.
+      Spacing 1.0 gave 24.4k but back 15 %, top 13 %.
+    - Comparing renders across runs: the whole figure went darker between two runs (brightness 83 -> 71 at 0.6 m, same
+      geometry: 0 silhouette pixels differ), cause not found. It first made 5 rows look much worse than it is: render both
+      sides under one lighting and check a non-hair control. The face session also edits the head in the same Blender,
+      and hair is fitted to the head: the same 5-row recipe gave 26.9k, 27.3k and 27.5k across its edits, so don't compare
+      builds across them. Only Curly is rebuilt on the post-eye-pass head; the others were fitted before it (eye-area skin
+      only, so a fringe close to the brows is what to check).
+      Untested idea: hair on its own LOD switch, since LOD0 and LOD1 match at 5 m and LOD0 is drawn to about 12 m.
+    27.5k tris, close to LongStrands thick (28k); L1 3.7k; L2 the clump copy. Checked: 5 faces / 3 builds /
+    5 colours, LOD0 + LOD1 + the game camera (renders/curly_lineup.png, curly_compare.png); LOD0 vs LOD1 at true 1080p
+    pixels at 9, 5 and 3 m, black / blonde / grey (curly_lods.png); under Cap / Hood / coifs / CloakHood / PlateHelm
+    (curly_headgear.png: curls show under the cap's rim at the nape and a fringe in the coifs' face opening; hood and
+    helm hide them). CropStrands + SweptStrands rebuilt after the short-builder refactor: same geometry (tris, verts,
+    vertex hash). Not play-tested; not in any NPC config.
+  - **MohawkStrands** (2026-10-30, the last style on the list; beards still later). `STAND` + `stand_parts`: strands
+    stand off the band and gather (0.85) into locks along the crest, shorter at the band's edges so the front reads as a
+    wedge, not a slab. Layers: "mat" (lying on the scalp, brushed back: from behind and above the standing strands point
+    at the camera, and the mat is what reads as hair there), two "side", "cross", a fine "side" (L0 only). Out of the sim,
+    as the bun (Guide x = -2). 6.6k / 1.7k / 335 tris; old Mohawk's blades lose to it from the side and at the game
+    camera. **Own LOD2** (mat + one layer of big cards, built by `stand_parts`), not the clump copy: that one had blades
+    floating over grey scalp patches. Renders: renders/mohawk_compare.png, mohawk_final.png (top row L0 x5, L1 x2, L2 x3;
+    bottom row 6 hats, then the old L2 at 9 m and 40 m).
+    - Weakest view: straight behind, still stringy and dark over the mat (strands end-on). The old one is tidier there.
+    - Name: `hairlineTint` is 0 only for the style strings "" and "Mohawk" (HumanFaceGenerator, HumanActor), so a merge
+      must treat "MohawkStrands" the same. Renders call `HumanActor.Face(..., "Mohawk", ...)`, then set `face.hairStyle`.
+    - Headgear: Cap and Hood cover it; MailCoif and CloakHood show a small front tuft; PlateHelm (open face: capCut 0, no
+      hoodCut, no hidesHair) lets the crest poke through. The old Mohawk does all of this too; not changed, in POLISH.md.
+  - **Live in the game and the showcase** (2026-10-30, Daniel: "just apply it to the main game, including that scene"): the
+    strand styles are now the game's. One rule in `HumanFace.PieceFor`: a plain style wears `<style>Strands` when that piece is
+    on the list ("Crop" -> Hair_CropStrands, "Full" -> Beard_FullStrands), else its own (Buzz, Tusks, Horns). So GameRules' NPCs
+    and creatures, the face config, the character maker's lists and saved looks all keep the plain names. `Styles()` lists a
+    style with strands once, under its plain name; LongThinStrands has no plain twin and shows as itself. Beard shadow is 0 for
+    any strand beard (set in HumanFace, whatever the face holds: the generator still writes 0.5 for the old names). Clump pieces
+    stay in Resources, unworn (they still count toward the build). `HumanHairCardsSpike.OfferOnPrefab` listed the 17 pieces on
+    Human.prefab; HumanSetup keeps them on a rebuild (`hf.pieces`) and no longer deletes `*Strands.asset`. Humans_Showcase
+    re-applied + saved (additively, the shared editor's scene untouched). Render: renders/strands_ingame_check.png (men; women;
+    Orc, Zombie, Elf, Dwarf, Lich, Giant presets; women's backs).
+    - Not play-tested. To watch: cost in crowds. Tris go up by up to 1.5x (Long 28k / 4.4k vs 19k / 2.6k, Curly 27k vs 18k; Crop
+      and the beards about even at L0, more at L1), and Swept, SidePart, Long, Ponytail and Bun now run a GPU sim per
+      human, visible and within 25 m (`simDistance`), so a pack of zombies or bandits is the worst case. Profile first if FPS drops.
+    - `HairCardsCheck` Gallery's "old" row now also shows strands (PieceFor). Its Sim on the Player still works.
+  - **Beards** (2026-10-30, redone the same day: Daniel found the first strand beards "weird"): Beard_FullStrands,
+    WizardStrands, DwarfStrands, GoateeStrands, MustacheStrands, ShortStrands, ShortSideburnsStrands, ChinStrapStrands beside
+    the clump ones, which are untouched (`BEARD_CARDS`, `beard_outline`, `beard_tip`, `beard_card_parts`; Tusks and Horns
+    aren't hair). Not the clump recipes any more: they shared the clump stencil (a rectangle on the cheek, straight back cut)
+    and hung straight down (a flat curtain from the side). Now an outline drawn in profile on this head, strands combed
+    toward the chin and gathered into locks, and cards lit as the beard's volume (`beard_normal`), not the skin under it
+    (under the jaw that faces the floor: the beard went black). Out of the sim (Guide -2), rigid on the head with exact keys,
+    as the clump beards. Tris (L0 / L1 / L2): Full 17.2k / 2.2k / 314, Wizard 21.8k / 2.7k / 310, Dwarf 23.2k / 2.9k / 314,
+    Goatee 4.7k / 739 / 128, Mustache 1.7k / 352 / 56, Short 14.4k / 2.3k / 291, ShortSideburns 15.6k / 2.5k / 305, ChinStrap
+    9.7k / 1.7k / 198. Renders: renders/beards_compare.png (all 8: front, 3/4, side), beards_check.png (other faces and
+    colours; headgear + a goatee close-up; L1; L2 at 9 m).
+    - **Sideburns** (Daniel: a Short beard stopped as a patch on the cheek): everything but Goatee and Mustache runs up in
+      front of the ear into the hair, a band about 2 cm wide (top edge zm + 0.076, the hair's edge there is around z 1.45), not
+      a wedge narrowing to nothing. Short differs from ShortSideburns only by its cleaner cheek line now. Sideburn strands
+      hang straight (`burn` in `beard_tip`); roots may sit 5 mm from the ear (at 12 mm the band had no strands).
+    - Nothing over the mouth: the beard's edge stays further from the lower lip than from the upper; pointed card roots,
+      because square ones read as teeth. Roots beside the mouth's corners droop short and on the skin: free, they stood off the
+      receding chin as stray wires. The goatee shows them as a small gap between mustache and chin patch.
+    - Still rough: the mustache's cards read as blades in an extreme close-up (fine at normal range); one or two thin
+      edge-on wires on Wizard from the side; L2 Dwarf/Wizard read as a beard from the game camera, the short styles barely.
+    - Short cards read as leaves (wool): a card's width is capped at half its length, `spread` 0.2 (how round it lights).
+    - Headgear: fine, the same cuts as the clump ones (hood_cut beard=True).
+    - `beardShadow`: `HumanFaceGenerator` sets 0.5 only for the exact old names, so these get 0, which is right: the skin tint
+      is painted to the old stencil (T_Head_MaskB) and would show around the new outline. No face config offers these yet;
+      `HumanHairCardsSpike.Offer` adds them to a face's list.
+    - Installed Human_HairCards.fbx is now 158 MB. hum_export.export_hair takes everything in HUM_Hair, these too: filter it
+      when re-exporting Human_Hair.fbx (see "Re-exporting Human_Hair.fbx").
+  - **Fixed for all strand styles** (2026-10-30): (a) LOD2 was bald. The parting clip reads HoodCut.y and the copies had
+    no `hair_part`, so 0 read as "on the parting" and the shell was cut away. `lod2_copy` now writes 99. Not seen in game:
+    no NPC config uses a spike style yet. (b) Guide -2 cards (bun, crest) lit dark from behind: Cull Off, only far curls
+    flipped their normals. The shader now flips them to face the viewer (capx.x = -1). The bun moved under 1% of pixels
+    (`3/4` 50 px, back 1,071, top 994, same lights).
+  - Numbers (the first cards, before the drape): LongStrands L0 9.4k tris (old Long 19k), L1 1.5k, 1,752 particles; PonytailStrands 8.0k (old 16.6k), 1,400
+    particles. Run + stop: strands off their target mean 0.5 cm (Long) / 0.3 cm (Ponytail), a short spike to the 20 cm
+    cap at the instant stop. Not done: the other 7 styles, beards, brows; sim data into HumanPiece for builds (editor
+    only now, like the cloth sim); LOD1 not simulated; alpha edges alias (no MSAA in the game); no play test yet.
+- Unity check: MedievalSetting Tools/Game/Checks/Cloth Motion (ClothMotionCheck) walks a dressed human through
+  idle/walk/run in a preview scene and shoots strips into Logs/ClothMotion; the sims have public Tick(dt) /
+  HumanHelperBones.Apply() for it.
 - Coifs (Padded/Mail/Plate) and the leather Hood still hide the neck and collar regions - likely the same hole
   from a low camera; check from below and drop the hide if nothing pokes through.
 - Chop: the elbow angle isn't keyed yet (the hammer's is) - fine now, but key it if a pop shows up.
@@ -490,7 +1071,7 @@ Done: head + eyes, stylisation, UVs, paint masks, preview shader, 98 keys, rando
 - Seam trims only cover torso/sleeve seams; leg/torso (trousers) seams are hidden by tunics/skirts so far.
 
 - Cloak: a soft vertical fold down the centre back; single sheet (no lining colour). Hood a bit bulky from
-  the side. Optional later: Unity Cloth (or spring bones on a few cape bones) for the portrait view only.
+  the side.
 
 - Studded coat skirt: studs cluster unevenly where rays hit the flared panels at a slant; a UV-grid placement
   would be tidier. StuddedCoat LOD0 is 9k tris (studs), L2 590.

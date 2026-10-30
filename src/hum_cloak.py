@@ -3,8 +3,9 @@ excludes them: bulky) - the outermost layer.
 
 Cloak      a cape: wool, from a collar around the neck over the tops of the shoulders, then hanging *behind*
            the arms down to mid-calf; fastened at the throat by an iron clasp. The arms stay free in front of
-           and beside it. Rings are the convex support of torso, legs and a proxy of the arms hanging and
-           swinging back (the rest pose has them out), so the cape clears the arms' back-swing when walking.
+           and beside it. Rings are the convex support of torso, legs, what's worn under it and a proxy of the
+           arms hanging (the rest pose has them out): it lies on the shoulder blades and the seat and hangs
+           near vertical below. An arm swung back meets its side; the cape chain (HumanSpringChain) moves it.
            On the spine only (a cape doesn't follow the thighs; they swing in front of it).
 CloakHood  worn with the cloak (a companion garment): a close hood (small point at the back), the face open
            from the hairline to the chin, closed around the throat, a short collar over the shoulders. Bound
@@ -22,6 +23,11 @@ ss = C.ss
 CLOAK_SPAN_TOP = math.pi                 # closed around the neck at the clasp
 CLOAK_SPAN_SHOULDER = math.radians(118)  # over the tops of the shoulders
 CLOAK_SPAN = math.radians(78)            # below the armpits: behind the arms
+# the arms the cape clears: hanging only (2026-10-27, Daniel: "the way cloaks hang is weird"). With them swung back
+# 15 and 30 deg as well, the hull stood the cape 10 cm off the shoulder blades and 20-28 cm off the seat - a shell
+# that moved as one tilted board
+ARM_SWING = (0.0,)
+CLOAK_FLARE = 0.045                      # out from the hull at the hem (was 0.07: a bell from behind)
 
 
 def _hull(Q):
@@ -87,10 +93,13 @@ def cloak_excludes():
 
 def _worn_under(B, shoulder):
     """Points of every body garment already built that can be worn under the cloak (LOD0; not the arms, which
-    are out in the rest pose and covered by the hanging-arm proxy; not other capes, worn instead of it; not
-    bulky armour): the cloak's hull clears the widest of them."""
+    are out in the rest pose and covered by the hanging-arm proxy - but the shoulder caps, which stay where they are
+    whatever the arm does; not other capes, worn instead of it; not bulky armour): the cloak's hull clears the widest
+    of them. (Without the caps a tunic's sleeve top came through the cloak's side over the deltoid even at rest,
+    on the strong and heavy builds - 2026-10-28, Daniel: "the shoulder area ... causing some clipping issues".)"""
     import bpy
     x_max = max(abs(shoulder["l"][0]), abs(shoulder["r"][0])) + 0.02
+    caps = [np.asarray(shoulder[s], float) for s in "lr"]
     pts = [np.zeros((0, 3))]
     for ob in bpy.data.objects:
         if not ob.name.startswith("Cloth_") or ob.name.startswith(("Cloth_Cloak",)):
@@ -99,11 +108,14 @@ def _worn_under(B, shoulder):
         if lod or tag != (C.BUILD["tag"] if C.BUILD else None):
             continue
         rec = C.GARMENTS.get(gname)
-        if rec is None or rec.get("headgear") or rec.get("slot") == "cloak" or bulky(rec):
-            continue
+        if rec is None or rec.get("headgear") or rec.get("slot") in ("cloak", "wings") or bulky(rec):
+            continue                                    # (wings: the angels' folded ones stood the cape off)
         import hum_builds, hum_rig
         Pn = hum_builds.build_coords(ob, hum_rig.SK)
-        pts.append(Pn[np.abs(Pn[:, 0]) < x_max][::3])
+        cap = np.zeros(len(Pn), bool)
+        for J in caps:                                  # over the joint, from 5 cm below it up (wider on an orc's)
+            cap |= (np.linalg.norm(Pn - J, axis=1) < max(0.11, 0.55 * abs(J[0]))) & (Pn[:, 2] > J[2] - 0.05)
+        pts.append(Pn[(np.abs(Pn[:, 0]) < x_max) | cap][::3])
     return np.vstack(pts)
 
 
@@ -138,7 +150,8 @@ def _cloak_radii(P, Z, TH, cy, z_neck, z_sh, t):
         R[k] = np.maximum(R[k], R[k - 1])
     for _ in range(2):
         R[1:-1] = 0.5 * R[1:-1] + 0.25 * (R[:-2] + R[2:])
-    off = 0.025 + 0.012 * ss(z_neck, z_sh, Z) + 0.07 * t ** 1.6             # flares toward the hem
+    off = 0.025 + 0.012 * ss(z_neck, z_sh, Z) + CLOAK_FLARE * t ** 1.6      # flares toward the hem
+    off = off - 0.01 * ss(z_sh, z_sh - 0.15, Z)                             # closer below the shoulders
     off = off + 0.012 * ss(z_sh, z_neck + 0.02, Z)                          # a looser collar over the hood's hem
     folds = 0.012 * t[:, None] * np.sin(9 * (TH - math.pi))
     return R + off[:, None] + folds
@@ -169,7 +182,7 @@ def _cloak(B, long=False, collar=None, hem=None, leaves=None):
     L = float(np.linalg.norm(B.j["hand_l"] - B.j["upperarm_l"])) + 0.08
     for s in "lr":
         a = shoulder[s]
-        for swing in (0.0, math.radians(15), math.radians(30)):        # hanging, and swung back when walking
+        for swing in ARM_SWING:
             d = np.array([0.0, math.sin(swing), -math.cos(swing)])
             for u in np.linspace(0.05, 1.0, 16):
                 c = np.array([a[0] * 1.02, a[1], a[2]]) + d * L * u
@@ -260,7 +273,11 @@ def shoulder_share(P, joints):
         vf = ss(J[2] - 0.50, J[2] - 0.02, P[:, 2])                 # from well below the armpit up
         bf = 1.0 - 0.85 * ss(J[1] + 0.02, J[1] + 0.12, P[:, 1])    # little on the back panel (+y is back):
                                                                    # it humped up behind raised arms
-        A[:, k] = 0.85 * la * vf * bf
+        # all of it on the arm itself (out past the shoulder joint): at 0.85, smoothed to ~0.65 there, the sleeve
+        # under it came out through the cloak in the combat stance and every swing (2026-10-28, Daniel: "the
+        # shoulder area ... is failing to move when the arms move"); reskin gives this share the sleeve's own rows
+        cap = 0.85 + 0.15 * ss(J[0] * sx - 0.02, J[0] * sx + 0.06, P[:, 0] * sx)
+        A[:, k] = cap * la * vf * bf
     return A
 
 
@@ -293,8 +310,9 @@ def with_shoulders(W, P, sk, joints):
 
 
 def with_chain(W, P, sk, joints):
-    """The spine part of the rows below the upper back onto the cape chain (hum_helpers.CAPE), blended between
-    neighbouring links by height; the collar, shoulders and arm shares stay."""
+    """The spine part of the rows below the upper back onto the cape grid (hum_helpers.CAPE_COLUMNS): across the back
+    between the two nearest columns (the outer ones take the cape out to its edges), down each by its own heights (from
+    just above its root, blended between neighbouring links); the collar, shoulders and arm shares stay."""
     import hum_helpers as HH
     if HH.CAPE[0] not in sk.index:
         return W
@@ -302,27 +320,51 @@ def with_chain(W, P, sk, joints):
     P = np.asarray(P, float)
     z = P[:, 2]
     ix = sk.index
-    heads = [HH.node(joints, HH.HELPERS[b]) for b in HH.CAPE]
-    tip = HH.node(joints, HH.HELPERS[HH.CAPE[-1]], "tail")
-    zs = [h[2] for h in heads] + [tip[2]]
-    mids = [(zs[i] + zs[i + 1]) / 2 for i in range(len(HH.CAPE))]           # each link's centre height
-    c = ss(zs[0] + 0.06, zs[0] - 0.10, z)                                     # 0 over the shoulders .. 1 below
+
+    def heights(chain):
+        """(c: the chain's share of the spine part by height, L: its links' weights)"""
+        zs = [HH.node(joints, HH.HELPERS[b])[2] for b in chain] + [HH.node(joints, HH.HELPERS[chain[-1]], "tail")[2]]
+        mids = [(zs[i] + zs[i + 1]) / 2 for i in range(len(chain))]       # each link's centre height
+        # linear between neighbouring centres (above the first all on it, below the last all on it)
+        L = np.zeros((len(P), len(chain)))
+        for k in range(len(chain)):
+            w = np.ones(len(P))
+            if k > 0:
+                w = np.where(z < mids[k - 1], np.clip((mids[k - 1] - z) / (mids[k - 1] - mids[k]), 0, 1), 0.0)
+            if k < len(chain) - 1:
+                w = np.where(z < mids[k], np.clip((z - mids[k + 1]) / (mids[k] - mids[k + 1]), 0, 1), w)
+            L[:, k] = w
+        return ss(zs[0] + 0.06, zs[0] - 0.10, z), L / np.maximum(L.sum(1, keepdims=True), 1e-9)
+
+    grid = [c for c in HH.CAPE_COLUMNS if c["bones"][0] in ix]
+    xs = np.array([c["x"] for c in grid])
+    order = np.argsort(xs)
+    cols = [(c["bones"], np.interp(P[:, 0], xs[order], (order == j).astype(float))) for j, c in enumerate(grid)]
     spine = [ix[b] for b in ("neck_01", "spine_03", "spine_02", "spine_01", "pelvis")]
-    S = W[:, spine].sum(1) * c
-    W[:, spine] *= (1 - c)[:, None]
-    # link weights: linear between neighbouring centres (above the first all on it, below the last all on it)
-    L = np.zeros((len(P), len(HH.CAPE)))
-    for k in range(len(HH.CAPE)):
-        w = np.ones(len(P))
-        if k > 0:
-            w = np.where(z < mids[k - 1], np.clip((mids[k - 1] - z) / (mids[k - 1] - mids[k]), 0, 1), 0.0)
-        if k < len(HH.CAPE) - 1:
-            w = np.where(z < mids[k], np.clip((z - mids[k + 1]) / (mids[k] - mids[k + 1]), 0, 1), w)
-        L[:, k] = w
-    L /= np.maximum(L.sum(1, keepdims=True), 1e-9)
-    for k, b in enumerate(HH.CAPE):
-        W[:, ix[b]] += S * L[:, k]
+    S = W[:, spine].sum(1)
+    took = np.zeros(len(P))
+    for chain, share in cols:
+        c, L = heights(chain)
+        m = share * c                                                     # 0 over the shoulders .. its share below
+        took += m
+        for k, b in enumerate(chain):
+            W[:, ix[b]] += S * m * L[:, k]
+    W[:, spine] *= (1 - took)[:, None]
     return W
+
+
+def top_bones(W, k=4, favour=()):
+    """Each row's k biggest weights, renormalised: Unity skins with 4 and drops the rest itself (on the cape grid a row
+    can reach 6 - two links in each of two columns, the spine and an arm share). `favour`: bones ranked as if 3x
+    heavier - the arm shares by the shoulder: dropped for a second column's link, the cloth there stopped following the
+    arm and an elbow bent back came through it."""
+    W = np.array(W, float)
+    if W.shape[1] > k:
+        rank = W.copy()
+        if len(favour):
+            rank[:, list(favour)] *= 3.0
+        np.put_along_axis(W, np.argsort(-rank, 1)[:, k:], 0.0, 1)
+    return W / np.maximum(W.sum(1, keepdims=True), 1e-9)
 
 
 def cape_weights(P, sk, joints):
@@ -333,7 +375,56 @@ def cape_weights(P, sk, joints):
     return W / np.maximum(W.sum(1, keepdims=True), 1e-9)
 
 
-def smooth_on_mesh(W, me, iterations=6):
+def smoothed_cape_weights(P, sk, joints, me, under=None):
+    """cape_weights smoothed on the mesh: the spine and the cape grid over 6 passes, the arm shares over 2 - six had
+    thinned the cloth lying on the upper arm to ~0.65 of the arm (its neighbours behind it ride the back), and the
+    sleeve came out through it whenever the arm swung (2026-10-28). `under` (rows, distances): the garment beneath (the
+    build's shirt, at each vertex's nearest point on it). Where the cloak lies on it - over the arms, and over the
+    shoulders and the upper back down to the cape grid's roots, within 7-10 cm (it's cut to clear mail) - it takes the
+    shirt's own rows, so it moves as the shirt does (clavicles and deltoid helpers included): weighted on its own, the
+    sleeve came through the top of the shoulder with the arms hanging (the shoulders drop with the clavicles) and
+    through the side in a swing."""
+    base = smooth_on_mesh(with_chain(spine_rows(P, sk, joints), P, sk, joints), me)
+    A = smooth_on_mesh(shoulder_share(P, joints), me, iterations=2, normalize=False)
+    if under is None:
+        W = base * (1.0 - A.sum(1))[:, None]
+        W[:, sk.index["upperarm_l"]] += A[:, 0]
+        W[:, sk.index["upperarm_r"]] += A[:, 1]
+        return W / np.maximum(W.sum(1, keepdims=True), 1e-9)
+    import hum_helpers as HH
+    rows, dist = under
+    z_root = min(float(HH.node(joints, HH.HELPERS[c["bones"][0]])[2]) for c in HH.CAPE_COLUMNS)   # the grid's roots
+    top = ss(z_root - 0.06, z_root + 0.04, P[:, 2]) * ss(0.10, 0.07, dist)
+    U = smooth_on_mesh(np.maximum(A.sum(1), top)[:, None], me, iterations=2, normalize=False)[:, 0]
+    W = base * (1.0 - U)[:, None] + U[:, None] * rows
+    return W / np.maximum(W.sum(1, keepdims=True), 1e-9)
+
+
+def under_rows(ob, src, sk):
+    """(rows, distances): src's weights at each of ob's vertices' nearest point on src (as hum_rig.transfer_weights),
+    and how far that point is."""
+    import bmesh, hum_rig
+    from mathutils.bvhtree import BVHTree
+    Ws = hum_rig.weights_of(src, sk)
+    bm = bmesh.new()
+    bm.from_mesh(src.data)
+    bm.faces.ensure_lookup_table()
+    bvh = BVHTree.FromBMesh(bm)
+    n = len(ob.data.vertices)
+    Wt = np.zeros((n, len(sk.bones)))
+    D = np.zeros(n)
+    for v in ob.data.vertices:
+        loc, nrm, fi, d = bvh.find_nearest(v.co)
+        f = bm.faces[fi]
+        ids = [u.index for u in f.verts]
+        k = 1.0 / (np.array([(u.co - loc).length for u in f.verts]) + 1e-6)
+        Wt[v.index] = (Ws[ids] * k[:, None]).sum(0) / k.sum()
+        D[v.index] = d
+    bm.free()
+    return Wt / np.maximum(Wt.sum(1, keepdims=True), 1e-9), D
+
+
+def smooth_on_mesh(W, me, iterations=6, normalize=True):
     """Average each row with its mesh neighbours: the folded rim follows its edge exactly (with the arms up the
     rim and the edge parted where the weights change fast - a torn look)."""
     e = np.zeros(len(me.edges) * 2, np.int64)
@@ -346,7 +437,7 @@ def smooth_on_mesh(W, me, iterations=6):
         np.add.at(S, e[:, 0], W[e[:, 1]])
         np.add.at(S, e[:, 1], W[e[:, 0]])
         W = np.where(deg[:, None] > 0, 0.5 * W + 0.5 * S / np.maximum(deg, 1)[:, None], W)
-    return W / np.maximum(W.sum(1, keepdims=True), 1e-9)
+    return W / np.maximum(W.sum(1, keepdims=True), 1e-9) if normalize else W
 
 
 def reskin(ob, arm, sk):
@@ -358,8 +449,14 @@ def reskin(ob, arm, sk):
     P = P.reshape(-1, 3)
     joints = {b.name: np.array(b.head_local) for b in arm.data.bones}
     W = hum_rig.weights_of(ob, sk)
-    W2 = hum_helpers.redistribute(smooth_on_mesh(cape_weights(P, sk, joints), ob.data), P, sk, joints, ob.data,
-                                  hum_helpers.hanging_mask(ob))
+    arms = [sk.index[b] for b in ("upperarm_l", "upperarm_r", "xh_deltoid_l", "xh_deltoid_r", "clavicle_l", "clavicle_r")
+            if b in sk.index]
+    import bpy, hum_cloth
+    _, tag, _ = hum_cloth.parse_cloth(ob.name)
+    shirt = bpy.data.objects.get(f"Cloth_Shirt_{tag}")           # the same build, at rest like the cloak
+    under = under_rows(ob, shirt, sk) if shirt is not None else None
+    W2 = top_bones(hum_helpers.redistribute(smoothed_cape_weights(P, sk, joints, ob.data, under), P, sk, joints,
+                                            ob.data, hum_helpers.hanging_mask(ob)), favour=arms)
     hum_helpers.rest_shift(ob, W, W2, sk)           # joints move differently per build
     for j in np.flatnonzero(np.abs(W2 - W).max(0) > 1e-5):
         name = sk.bones[j]

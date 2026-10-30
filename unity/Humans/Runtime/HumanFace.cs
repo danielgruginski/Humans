@@ -106,14 +106,29 @@ namespace Humans
             Apply();
         }
 
-        /// <summary>Hair/beard/brow styles on offer, by prefix ("Hair_", "Beard_", "Brows_").</summary>
+        /// <summary>Hair/beard/brow styles on offer, by prefix ("Hair_", "Beard_", "Brows_"). A style with strand cards is
+        /// listed once, under its plain name (see PieceFor).</summary>
         public List<string> Styles(string prefix)
         {
             var list = new List<string>();
             foreach (var p in PieceSet)
-                if (p.StartsWith(prefix)) list.Add(p.Substring(prefix.Length));
+            {
+                if (!p.StartsWith(prefix)) continue;
+                if (p.EndsWith(StrandSuffix) && PieceSet.Contains(p.Substring(0, p.Length - StrandSuffix.Length))) continue;
+                list.Add(p.Substring(prefix.Length));
+            }
             list.Sort();
             return list;
+        }
+
+        const string StrandSuffix = "Strands";
+
+        /// <summary>the piece a style is worn as: its strand cards when it has them ("Crop": Hair_CropStrands), else its own
+        /// (Buzz, Horns). So every face, saved look and NPC keeps naming the plain style; the clump pieces stay, unworn.</summary>
+        string PieceFor(string prefix, string style)
+        {
+            string strands = prefix + style + StrandSuffix;
+            return PieceSet.Contains(strands) ? strands : prefix + style;
         }
 
         /// <summary>the pieces there are (a prefab from before they were cut out: the ones it carries)</summary>
@@ -274,6 +289,7 @@ namespace Humans
             }
             ApplySkeleton(bodyWeights);
             if (lodsDirty) RefreshLods();
+            HumanHairSim.Ensure(this);                                    // simulated hair (strand cards): its sim, bound again
         }
 
         /// <summary>Bones move by the keys' joint deltas; height scales the model; animated hips get lifted.</summary>
@@ -322,15 +338,19 @@ namespace Humans
                 bool on = worn.ContainsKey(BaseName(t.name));
                 if (t.gameObject.activeSelf != on) t.gameObject.SetActive(on);
             }
+            var push = GetComponent<HumanClothPush>();
+            var pushWorn = push != null ? new List<(Renderer, HumanPiece, bool, bool)>() : null;
             foreach (var kv in worn)
             {
                 string g = kv.Key.Substring(6).Split('_')[0];
-                var mat = Config.FindGarment(g)?.material;
+                var garment = Config.FindGarment(g);
+                var mat = garment?.material;
                 bool torn = mat != "plate" && mat != "bone" && mat != "feather";   // fabrics tear; iron, bones, feathers don't
                 for (int lod = 0; lod < LodCount; lod++)
                 {
                     var smr = Piece(kv.Key, lod, clothRoot);
                     if (smr == null) continue;
+                    pushWorn?.Add((smr, LoadPiece(kv.Key), garment?.slot == "cloak", garment != null && garment.hangs));
                     if (!smr.gameObject.activeSelf) smr.gameObject.SetActive(true);
                     SetWeights(smr, weights);
                     mpb.Clear();
@@ -343,13 +363,15 @@ namespace Humans
                     smr.SetPropertyBlock(mpb);
                 }
             }
-            // the cape's spring chain only runs while a cape (cloak slot) is worn
-            var chain = GetComponent<HumanSpringChain>();
-            if (chain != null)
+            push?.Refit(pushWorn);                                       // cloaks and skirts kept off the limbs
+            // the cape's spring chains (centre and sides) only run while a cape (cloak slot) is worn
+            var chains = GetComponents<HumanSpringChain>();
+            if (chains.Length > 0)
             {
                 bool cape = false;
                 foreach (var n in face.GarmentNames) cape |= Config.FindGarment(n)?.slot == "cloak";
-                if (chain.enabled != cape) chain.enabled = cape;
+                foreach (var chain in chains)
+                    if (chain.enabled != cape) chain.enabled = cape;
             }
             // the wings' chains while wings are worn (demons, imps, angels)
             var wings = GetComponent<HumanWings>();
@@ -372,7 +394,7 @@ namespace Humans
             if (skirt != null)
             {
                 bool on = Config.Skirted(face.GarmentNames);
-                if (on) Config.SkirtSlackOf(face.GarmentNames, face.build, skirt.SlackHip, skirt.SlackKnee);
+                if (on) Config.SkirtSlackOf(face.GarmentNames, face.build, skirt.SlackHip, skirt.SlackMid, skirt.SlackKnee);
                 if (skirt.enabled != on) skirt.enabled = on;
             }
         }
@@ -398,7 +420,8 @@ namespace Humans
             mpb.SetFloat(IdAge, face.ageLines);
             mpb.SetFloat(IdBrows, Mathf.Max(face.paintedBrows, minBrows));
             mpb.SetFloat(IdScalp, string.IsNullOrEmpty(face.hairStyle) ? 0f : face.hairlineTint);
-            mpb.SetFloat(IdBeardShadow, string.IsNullOrEmpty(face.beardStyle) ? 0f : face.beardShadow);
+            // (the skin's tint is painted to the clump beards' outline: it would show around a strand beard's)
+            mpb.SetFloat(IdBeardShadow, string.IsNullOrEmpty(face.beardStyle) || PieceFor("Beard_", face.beardStyle).EndsWith(StrandSuffix) ? 0f : face.beardShadow);
             mpb.SetFloat(IdRot, face.rot);
             mpb.SetVector(IdWounds, face.wounds);
             head.SetPropertyBlock(mpb, 0);
@@ -415,8 +438,8 @@ namespace Humans
             var want = new List<string>(3);
             if (!noFaceHair)
             {
-                if (!noHair && !string.IsNullOrEmpty(face.hairStyle)) want.Add("Hair_" + face.hairStyle);
-                if (!string.IsNullOrEmpty(face.beardStyle)) want.Add("Beard_" + face.beardStyle);
+                if (!noHair && !string.IsNullOrEmpty(face.hairStyle)) want.Add(PieceFor("Hair_", face.hairStyle));
+                if (!string.IsNullOrEmpty(face.beardStyle)) want.Add(PieceFor("Beard_", face.beardStyle));
                 if (!string.IsNullOrEmpty(face.browStyle)) want.Add("Brows_" + face.browStyle);
             }
             foreach (Transform t in hairRoot)

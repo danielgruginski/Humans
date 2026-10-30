@@ -481,12 +481,51 @@ IRIS = {"brown": "#4a2a14", "dark_brown": "#2c1a0e", "hazel": "#6a4c26", "green"
         "blue": "#3d6e9e", "grey": "#6f7d86", "amber": "#9a6a22"}
 
 
-FEM_BIAS = dict(Hips=0.35, Waist=-0.3, ShoulderWidth=-0.25, Bust=0.2, EyeSize=0.35, BrowRidge=-0.5, NoseWidth=-0.35, NoseLength=-0.2, NoseTipWidth=-0.3,
+FEM_BIAS = dict(Hips=0.35, Waist=-0.3, ShoulderWidth=-0.25, Bust=0.2, EyeSize=0.35, BrowRidge=-0.5, NoseWidth=-0.2, NoseLength=-0.2, NoseTipWidth=-0.12,
                 ChinWidth=-0.4, FaceFat=-0.1, LipUpper=0.3, LipLower=0.2, CheekBones=0.3, EyeOpen=0.15)
 # MPFB's nose/chin targets are strong at 1.0: random faces use less of them (sliders keep +-1)
 SPREAD = dict(NoseHump=0.5, NoseCurve=0.5, NoseTipUp=0.6, NoseLength=0.6, NoseDepth=0.6, NoseFlare=0.6,
               ChinForward=0.6, ChinHeight=0.7, HeadLength=0.6, EyeTilt=0.7)
 MASC_BIAS = dict(ChestMuscle=0.25, ShoulderWidth=0.3, BrowRidge=0.3, ChinWidth=0.25, NoseWidth=0.1)
+# Face types (2026-10-30): each slider rolled alone made forty small unrelated changes, so every face read alike. A
+# random face now rolls one type (features that belong together, at 0.75-1.2 strength) and each face slider's own noise
+# is smaller (FACE_NOISE). (name, odds for a man, odds for a woman, slider means)
+FACE_TYPES = [
+    ("Plain", 1.0, 1.0, {}),
+    ("Rugged", 1.4, 0.3, dict(BrowRidge=0.49, BrowHeight=-0.21, EyeSize=-0.35, NoseWidth=0.42, NoseTipWidth=0.35, NoseHump=0.21,
+                              MouthWidth=0.28, LipUpper=-0.35, LipLower=-0.14, ChinWidth=0.56, ChinForward=0.28, CheekBones=0.28,
+                              FaceSquare=0.49, NeckWidth=0.49, ForeheadSlope=0.28)),
+    ("Long", 1.0, 1.0, dict(HeadLength=0.49, HeadWidth=-0.42, NoseLength=0.42, NoseWidth=-0.14, ChinHeight=0.49, ChinWidth=-0.21,
+                            ForeheadHeight=0.28, FaceOval=0.42, MouthWidth=-0.14, EarSize=0.14)),
+    ("Hawk", 1.0, 0.7, dict(NoseHump=0.56, NoseLength=0.28, NoseWidth=-0.28, NoseTipUp=-0.28, NoseDepth=0.28, CheekBones=0.49,
+                            CheekFull=-0.28, EyeHooded=0.28, EyeSize=-0.14, LipUpper=-0.28, LipLower=-0.14, ChinForward=0.28,
+                            HeadWidth=-0.28, FaceDiamond=0.35)),
+    ("Round", 0.7, 1.2, dict(FaceRound=0.42, CheekFull=0.32, FaceFat=0.14, EyeSize=0.15, NoseLength=-0.42, NoseTipUp=0.35,
+                             ChinHeight=-0.28, ChinWidth=-0.14, LipUpper=0.21, LipLower=0.28, HeadLength=-0.28, NeckWidth=0.14)),
+    ("Fine", 0.3, 1.3, dict(FaceInvTriangle=0.49, ChinWidth=-0.42, ChinHeight=-0.07, CheekBones=0.42, EyeSize=0.28, EyeTilt=0.28,
+                            NoseWidth=-0.21, NoseLength=-0.14, NoseTipWidth=-0.21, LipUpper=0.21, LipLower=0.35, BrowAngle=0.14,
+                            NeckWidth=-0.28, EarSize=-0.21)),
+    ("Broad", 1.0, 0.8, dict(HeadWidth=0.42, HeadLength=-0.21, FaceSquare=0.21, EyeSpacing=0.35, NoseWidth=0.49, NoseTipWidth=0.42,
+                             NoseDepth=-0.28, NoseFlare=0.35, MouthWidth=0.42, LipUpper=0.28, LipLower=0.35, ChinWidth=0.28,
+                             CheekBones=0.35, NeckWidth=0.35)),
+    ("Pinched", 0.9, 0.7, dict(HeadWidth=-0.35, EyeSpacing=-0.35, EyeSize=-0.21, NoseWidth=-0.28, NoseTipWidth=-0.28, NoseCurve=0.28,
+                               MouthWidth=-0.42, LipUpper=-0.28, LipLower=-0.21, ChinWidth=-0.42, ChinForward=-0.42, ChinHeight=-0.14,
+                               ForeheadSlope=0.35, EarOut=0.35)),
+    ("Snub", 0.8, 1.0, dict(NoseLength=-0.49, NoseTipUp=0.49, NoseTipWidth=0.28, NoseDepth=-0.21, MouthWidth=0.28, MouthCorners=0.21,
+                            CheekFull=0.21, EyeSize=-0.07, FaceRound=0.21, EarOut=0.42, ChinHeight=-0.14, ForeheadHeight=0.21)),
+    ("Severe", 0.9, 0.6, dict(CheekBones=0.4, CheekFull=-0.28, FaceFat=-0.18, EyeHooded=0.35, BrowHeight=-0.28, BrowRidge=0.28,
+                              LipUpper=-0.42, LipLower=-0.28, MouthCorners=-0.28, NoseWidth=-0.14, ChinWidth=-0.14, HeadLength=0.21,
+                              FaceDiamond=0.28, NeckWidth=-0.21)),
+    ("Soft", 0.8, 1.0, dict(EyeHooded=0.49, EyeOpen=-0.28, EyeTilt=-0.21, BrowHeight=0.14, LipUpper=0.35, LipLower=0.42,
+                            MouthCorners=0.14, ChinForward=-0.21, CheekFull=0.28, NoseLength=0.14, FaceOval=0.28)),
+    ("Jaw", 0.9, 0.4, dict(ChinHeight=0.42, ChinForward=0.49, ChinWidth=0.49, NoseLength=-0.14, ForeheadHeight=-0.28, FaceTriangle=0.42,
+                           EyeSize=-0.14, BrowRidge=0.28)),
+]
+FACE_NOISE = 0.55
+# whatever the type, a heavy face is fleshy (the Heavy/Thin roll, -1..1) and an old one thin-lipped and hooded (0..1)
+FACE_FLESH = dict(FaceFat=0.3, CheekFull=0.3, CheekBones=-0.15, NeckWidth=0.2, ChinWidth=0.08)
+FACE_OLD = dict(LipUpper=-0.2, LipLower=-0.12, EyeHooded=0.25, EarLobe=0.15, NoseLength=0.08, BrowHeight=-0.08, CheekFull=-0.08,
+                EyeOpen=-0.1)
 
 
 # style weights (masculine, feminine); None = no geometry
@@ -654,14 +693,24 @@ def _random_face(seed):
     # sex-linked means (stylised dimorphism on top of MPFB's macro), resting mouth slightly up
     bias = dict(FEM_BIAS if not masc else MASC_BIAS)
     bias["MouthCorners"] = bias.get("MouthCorners", 0.0) + 0.25
+    # the face type, from a stream of its own: hair, clothes and body of a seed stay what they were
+    type_rng = random.Random(seed * 1000003 + 12345)
+    face_type = type_rng.choices(FACE_TYPES, weights=[t[1] if masc else t[2] for t in FACE_TYPES])[0][3]
+    strength = type_rng.uniform(0.75, 1.2)
+    flesh, old = w.get("Heavy", 0.0) - w.get("Thin", 0.0), max(0.0, (age - 0.35) / 0.65)
     for name, pos, neg in SLIDERS:
         if name in PRESET_ONLY:
             continue                          # the orcs' (no draw: every rolled face stays as it was)
-        v = rng.gauss(bias.get(name, 0.0) * sex, 0.3) * SPREAD.get(name, 1.0)
+        mean = bias.get(name, 0.0) * sex
+        v = rng.gauss(mean, 0.3)
+        if name not in BODY_SLIDERS:
+            v = mean + (v - mean) * FACE_NOISE
+        v *= SPREAD.get(name, 1.0)
         if name.startswith("Face") and not neg:
-            v = abs(rng.gauss(0, 0.25)) if rng.random() < 0.35 else 0.0
+            v = abs(rng.gauss(0, 0.25)) * FACE_NOISE if rng.random() < 0.35 else 0.0
         if name in ("EarPointed", "ChinCleft", "Belly"):
             v = max(0.0, rng.gauss(-0.2, 0.4))
+        v += face_type.get(name, 0.0) * strength + FACE_FLESH.get(name, 0.0) * flesh + FACE_OLD.get(name, 0.0) * old
         v = 0.7 * np.tanh(v / 0.7)          # random faces stay off the extremes (players can go to +-1)
         if v > 0:
             w[name + "_Pos"] = v

@@ -7,6 +7,7 @@
 // so the rings are one size everywhere; trims (uv3.y = 1) keep their flat UV.
 // Double-sided (open sheets like shoulder plates and hems seen from inside): back faces get flipped normals.
 // Layering: uv1.x = body region under the face; bit (region) of _Hide set = covered by an outer garment.
+// Simulated cloth (a cloak: HumanClothSim, _SimOn 1): the vertex comes from the sim's buffer, not the skinning.
 // Torn (the undead, per renderer): _Tatter 0..1 over the tatter texture (R holes, G dirt, B fray), projected in 3D from
 // the rest position like the mail: holes where R + fray < _Tatter * holes (hems tear first), a dark frayed rim, dirt;
 // _TatterCut 1 cuts the holes out (a skeleton's rags: the bones show; the depth and shadow passes clip them too),
@@ -42,6 +43,7 @@ Shader "Humans/Cloth"
         Tags { "RenderPipeline" = "UniversalPipeline" "RenderType" = "Opaque" "Queue" = "Geometry" }
 
         HLSLINCLUDE
+        #define HUMAN_VERTEX_ID
         #include "HumanCommon.hlsl"
 
         TEXTURE2D(_Pattern); SAMPLER(sampler_Pattern);
@@ -80,6 +82,61 @@ Shader "Humans/Cloth"
             dirt = smoothstep(0.3, 0.9, t.g);
         }
 
+        // Pushed off the limbs (HumanClothPush, per renderer): tapered capsules now (world xyz, radius in w) and at rest (the
+        // garment's rest space: Blender axes, the build's rest metres; w 0 = a held prop, no rest). A vertex in one is moved
+        // out along the capsule's radius by how much deeper it is than its rest position lay in the rest capsule: cloth that
+        // hugs a limb at rest stays put, cloth the motion pushed into it comes back out to its surface. _PushAll 1: every
+        // vertex (a cloak); 0: the hanging part only (body region 0: a skirt, never its sleeves)
+        #define HPUSH_MAX 16
+        float4 _PushA[HPUSH_MAX], _PushB[HPUSH_MAX], _PushRestA[HPUSH_MAX], _PushRestB[HPUSH_MAX];
+        float _PushN, _PushAll, _PushScale;
+
+        float CapsuleDepth(float3 p, float4 a, float4 b, out float3 dir)
+        {
+            float3 ab = b.xyz - a.xyz;
+            float t = saturate(dot(p - a.xyz, ab) / max(dot(ab, ab), 1e-8));
+            float3 d = p - (a.xyz + ab * t);
+            float l = length(d);
+            dir = l > 1e-6 ? d / l : float3(0, 1, 0);
+            return lerp(a.w, b.w, t) - l;                                // > 0: inside, by this much
+        }
+
+        float3 ClothPush(float3 pWS, float3 rest, float region)
+        {
+            if (_PushN < 0.5 || (_PushAll < 0.5 && round(region) != 0)) return pWS;
+            float3 push = 0;
+            for (int k = 0; k < HPUSH_MAX; k++)
+            {
+                if (k >= (int)_PushN) break;
+                float3 dir, rdir;
+                float now = CapsuleDepth(pWS + push, _PushA[k], _PushB[k], dir);
+                if (now <= 0) continue;
+                float was = _PushRestA[k].w > 0 ? CapsuleDepth(rest, _PushRestA[k], _PushRestB[k], rdir) * _PushScale : 0;
+                push += dir * max(now - max(was, 0), 0);
+            }
+            return pWS + push;
+        }
+
+        // Simulated instead (HumanClothSim, spike; per renderer): _SimOut holds a world position and normal per mesh vertex
+        StructuredBuffer<float4> _SimOut;
+        float _SimOn;
+
+        // HumanVert, then simulated or pushed off the limbs (every pass: the shadow and the depth match the colour)
+        HVaryings ClothVert(HAttributes v)
+        {
+            HVaryings o = HumanVert(v);
+            UNITY_BRANCH if (_SimOn > 0.5)
+            {
+                o.positionWS = _SimOut[v.vid * 2].xyz;
+                o.normalWS = _SimOut[v.vid * 2 + 1].xyz;
+            }
+            else
+                o.positionWS = ClothPush(o.positionWS, float3(v.uv2.x, v.uv2.y, v.uv3.x), v.uv1.x);
+            o.positionCS = TransformWorldToHClip(o.positionWS);
+            o.fogFactor = ComputeFogFactor(o.positionCS.z);
+            return o;
+        }
+
         // regions an outer layer covers, and a skeleton's rags' holes
         void ClothClip(HVaryings i)
         {
@@ -101,8 +158,8 @@ Shader "Humans/Cloth"
             Tags { "LightMode" = "UniversalForward" }
             Cull Off
             HLSLPROGRAM
-            #pragma target 3.0
-            #pragma vertex HumanVert
+            #pragma target 4.5
+            #pragma vertex ClothVert
             #pragma fragment frag
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE _MAIN_LIGHT_SHADOWS_SCREEN
             #pragma multi_compile _ _ADDITIONAL_LIGHTS_VERTEX _ADDITIONAL_LIGHTS
@@ -157,6 +214,7 @@ Shader "Humans/Cloth"
             Tags { "LightMode" = "ShadowCaster" }
             ZWrite On ZTest LEqual ColorMask 0 Cull Off
             HLSLPROGRAM
+            #pragma target 4.5
             #pragma vertex ShadowVert
             #pragma fragment ShadowFrag
             #pragma multi_compile_instancing
@@ -168,7 +226,7 @@ Shader "Humans/Cloth"
 
             HVaryings ShadowVert(HAttributes v)
             {
-                HVaryings o = HumanVert(v);
+                HVaryings o = ClothVert(v);
             #if _CASTING_PUNCTUAL_LIGHT_SHADOW
                 float3 l = normalize(_LightPosition - o.positionWS);
             #else
@@ -193,7 +251,8 @@ Shader "Humans/Cloth"
             Tags { "LightMode" = "DepthOnly" }
             ZWrite On ColorMask R Cull Off
             HLSLPROGRAM
-            #pragma vertex HumanVert
+            #pragma target 4.5
+            #pragma vertex ClothVert
             #pragma fragment DepthFrag
             #pragma multi_compile_instancing
 
@@ -212,7 +271,8 @@ Shader "Humans/Cloth"
             Tags { "LightMode" = "DepthNormals" }
             ZWrite On Cull Off
             HLSLPROGRAM
-            #pragma vertex HumanVert
+            #pragma target 4.5
+            #pragma vertex ClothVert
             #pragma fragment DepthNormalsFrag
             #pragma multi_compile_instancing
             #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/RenderingLayers.hlsl"

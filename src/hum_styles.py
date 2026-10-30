@@ -93,15 +93,29 @@ def flow_fn(H, st):
 
 # ------------------------------------------------------------------ builders
 
-def hair_parts(H, st, seed=0):
-    rng = np.random.default_rng(seed)
+def hair_mask_fn(H, st):
     mask = lambda P: H.hair_mask(P, st.get("recede", 0.0))
     if st.get("band"):
         band = st["band"]
         mask = lambda P, m0=mask: m0(P) * hum_hair.ss(band, band * 0.6, np.abs(P[..., 0]))
+    return mask
+
+
+def hair_parts(H, st, seed=0):
+    mask = hair_mask_fn(H, st)
     parts = [cap_part(H, mask, st["cap"], subdiv=st.get("cap_subdiv", 1), ratio=st.get("cap_ratio", 1.0))]
     if "flow" not in st:
         return parts
+    spines, W, T, R = hair_spines(H, st, seed)
+    parts.append(clumps_part(H, spines, W, T, coherent_ids(np.array(R), seed), sides=st.get("sides", 6)))
+    return parts
+
+
+def hair_spines(H, st, seed=0):
+    """A style's clump spines (root -> tip), widths, thicknesses and root positions (for coherent ids): the clumps'
+    centre lines, and the strand cards' guides (hum_cards)."""
+    rng = np.random.default_rng(seed)
+    mask = hair_mask_fn(H, st)
     fl = flow_fn(H, st)
     floor = st["cap"] + 0.0015
     H.domes = bool(st.get("cover_ears"))
@@ -167,8 +181,7 @@ def hair_parts(H, st, seed=0):
             W.append(st["bun"].get("width", 0.03) * rng.uniform(0.8, 1.1))
             T.append(0.012)
             R.append(sp[0])
-    parts.append(clumps_part(H, spines, W, T, coherent_ids(np.array(R), seed), sides=st.get("sides", 6)))
-    return parts
+    return spines, W, T, R
 
 
 def coherent_ids(P, seed=0, scale=22.0):
