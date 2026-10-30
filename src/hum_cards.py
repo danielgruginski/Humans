@@ -207,6 +207,7 @@ def cards_part(H, spines, widths, ids, cols, layer, guide0=0, row_len=0.018, cur
     V, NV, guide = [], [], []
     loops_guide = []
     p_index = guide0
+    rows_p, rows_t = [], []
     for k, (S, w0, rid, col) in enumerate(zip(spines, widths, ids, cols)):
         S = np.asarray(S, float)
         nfn = normal_fns[k] if normal_fns is not None else None
@@ -215,6 +216,8 @@ def cards_part(H, spines, widths, ids, cols, layer, guide0=0, row_len=0.018, cur
         rows = int(np.clip(round(_bent_length(S, bend)[1][-1] / row_len) + 1, min_rows, max_rows))
         P, L, sv = _resample(S, rows, bend)
         T = _unit(np.gradient(P, axis=0))
+        rows_p.append(P)
+        rows_t.append(T)
         Ns = []
         for i in range(rows):
             if nfn is not None:
@@ -264,6 +267,7 @@ def cards_part(H, spines, widths, ids, cols, layer, guide0=0, row_len=0.018, cur
     part.normals = NV
     part.edge = [0.0] * len(V)
     part.layer = [layer] * len(V)
+    part.rows = (np.concatenate(rows_p), np.concatenate(rows_t)) if rows_p else None
     return part, loops_guide, p_index
 
 
@@ -793,6 +797,10 @@ TACHE_TOP = (0.0205, 0.021, 0.022, 0.021, 0.018, 0.014, 0.0095, 0.004, -0.002)
 TACHE_X_LIP = (0.0, 0.003, 0.006, 0.020, 0.024, 0.027, 0.0282, 0.031)
 TACHE_LIP = (0.0088, 0.0095, 0.0099, 0.0099, 0.0092, 0.0066, 0.001, -0.004)
 TACHE_SPACING, TACHE_WIDTH = 0.0028, 0.0034
+# the lower lip's bottom edge by x (m, from the mouth's line). Its vertices are up to a centimetre apart, so a distance to them
+# (H.lip_dist) lets a beard through in columns between them: hair over the lip, in stripes
+LIP_LOW_X = (0.0, 0.005, 0.013, 0.017, 0.021, 0.024, 0.0282)
+LIP_LOW = (-0.0145, -0.014, -0.0123, -0.0096, -0.0086, -0.0073, 0.0001)
 BEARD_LAYERS = [(1.8, 0.0, 1.8, (0, 1, 2), 0.0), (1.0, 0.0008, 1.0, (0, 1, 2), 0.4), (1.3, 0.0016, 0.8, (3, 4, 5), 0.8),
                 (2.5, 0.0024, 0.5, (6, 7), 1.1)]
 _LONG = dict(shape="full", v0=0.5, cap_light=0.8, cap=0.002)
@@ -837,7 +845,8 @@ def beard_outline(H, shape):
         low_z = np.interp(y, low_y, low)
         below = ss(low_z - 0.002, low_z + 0.003, z) * ss(y_back - yc + 0.001, y_back - yc - 0.003, y)
         d_lip = H.lip_dist(P)
-        lips = np.where(z < -0.002, ss(0.002, 0.005, d_lip), ss(0.0015, 0.004, d_lip))
+        z_low = np.interp(ax, LIP_LOW_X, LIP_LOW)
+        lips = np.where((z < 0.0) & (ax < 0.03) & (y < 0.02), ss(z_low - 0.0006, z_low - 0.0026, z), ss(0.0012, 0.0035, d_lip))
         top_z = np.interp(y, dy, top)
         # the mustache, drawn on the upper lip as measured (x, z from the mouth's line): from just under the nose and its
         # wings, the top edge falling to the mouth's corner (28 mm); the lip below it is `lips`' to keep clear, its ends a
@@ -1370,15 +1379,257 @@ def draped_parts(H, name, seed=0, lod=0):
     return parts, guides, npart
 
 
+# ------------------------------------------------------------------ brows
+
+# the brow's arc as the head's painted one (hum_paint.paint_masks); half: half its thickness at the thickest, in eye radii.
+# Layers: (spacing x, off the skin, width x, atlas columns)
+BROW_CARDS = {
+    "NormalStrands": dict(height=1.12, arch=0.22, half=0.16, spacing=0.0015, width=0.0032, length=0.0085),
+    "ThinStrands": dict(height=1.14, arch=0.30, half=0.09, spacing=0.0015, width=0.0025, length=0.0072),
+    "BushyStrands": dict(height=1.10, arch=0.16, half=0.22, spacing=0.0015, width=0.0036, length=0.0105),
+    "StraightStrands": dict(height=1.10, arch=0.05, half=0.16, spacing=0.0015, width=0.0032, length=0.0085),
+}
+BROW_LAYERS = [(1.0, 0.0004, 1.0, (3, 4, 5)), (1.1, 0.0009, 0.8, (6, 7))]
+
+
+def brow_field(H, st, P):
+    """Where P is on the brow: t 0 inner end .. 1 outer end, s -1 lower edge .. 1 upper edge, its half thickness (m)."""
+    c, r, _ = H.F.eye["l"]
+    cx = abs(float(c[0]))
+    inner, outer = cx - 0.85 * r, cx + 1.45 * r
+    t = (np.abs(P[..., 0]) - inner) / (outer - inner)
+    tc = np.clip(t, 0.0, 1.0)
+    zc = c[2] + r * (st["height"] + st["arch"] * np.sin(tc ** 0.8 * np.pi) - 0.10 * tc)
+    half = r * st["half"] * (0.6 + 0.4 * ss(0.0, 0.16, tc)) * (1.0 - 0.8 * ss(0.35, 1.0, tc))    # a blunt head, a fine tail
+    return t, (P[..., 2] - zc) / half, half
+
+
+def brow_mask(H, st):
+    c, r, _ = H.F.eye["l"]
+    y_front = float(c[1]) - 0.3 * r
+
+    def mask(P):
+        t, sv, _ = brow_field(H, st, P)
+        return ss(1.15, 0.85, np.abs(sv)) * ss(-0.03, 0.01, t) * ss(1.03, 0.97, t) * ss(y_front + 0.002, y_front - 0.002, P[..., 1])
+    return mask
+
+
+def brow_parts(H, name, seed=0, lod=0):
+    """Fine cards rooted over the arc, each lying on the skin the way a brow grows: the inner end nearly straight up,
+    then leaning outward, the tail running out and a little down; lower hairs rising and upper ones flatter, so they
+    meet along a ridge."""
+    st = BROW_CARDS[name]
+    H.domes = False
+    mask = brow_mask(H, st)
+    k_space, k_width = ((1.0, 1.0), (2.0, 1.9))[lod]
+    parts, guides = [], []
+    for li, (sk, floor, wk, cols) in enumerate(BROW_LAYERS if lod == 0 else BROW_LAYERS[:1]):
+        rng = np.random.default_rng(seed * 100 + 7 + li)
+        roots, spines, W = [], [], []
+        for r0 in scalp_points(H, mask, st["spacing"] * sk * k_space, seed * 10 + 3 + li, thresh=0.5):
+            loc, n, _ = H.nearest(r0)
+            t, sv, _ = brow_field(H, st, loc)
+            t, sv = float(np.clip(t, 0.0, 1.0)), float(np.clip(sv, -1.0, 1.0))
+            a = np.interp(t, (0.0, 0.1, 0.3, 0.6, 1.0), (80.0, 72.0, 42.0, 18.0, -20.0))
+            a = np.radians(a - 18.0 * sv * ss(0.08, 0.25, t) + rng.uniform(-8.0, 8.0))
+            d = np.array([np.sign(loc[0] + 1e-6) * np.cos(a), 0.0, np.sin(a)])
+            L = st["length"] * float(np.interp(t, (0.0, 0.15, 0.6, 1.0), (0.65, 1.0, 1.0, 0.7))) * rng.uniform(0.8, 1.15)
+            S = skin_spine(H, loc, n, loc + d * L, floor, 0.0006)
+            roots.append(loc)
+            spines.append(S)
+            v = st["width"] * wk * k_width * rng.uniform(0.85, 1.15)
+            W.append(lambda q, v=v: v * (0.5 + 0.5 * ss(0.0, 0.2, q)) * (1.0 - 0.75 * ss(0.4, 1.0, q)))
+        if not roots:
+            continue
+        ids = hum_styles.coherent_ids(np.array(roots), seed)
+        cc = [cols[int(rng.integers(len(cols)))] for _ in spines]
+        p, g, _ = cards_part(H, spines, W, ids, cc, li / max(len(BROW_LAYERS) - 1, 1), row_len=0.004 if lod == 0 else 0.02,
+                             max_rows=3 if lod == 0 else 2, min_rows=3 if lod == 0 else 2, root_sink=0.0, curve=0.03, v0=0.5,
+                             spread=0.2, normal_fns=[lambda q: H.nearest(q)[1]] * len(spines))
+        parts.append(p)
+        guides += [(-2.0, gy) for _, gy in g]
+    return parts, guides, 0
+
+
+# ------------------------------------------------------------------ edges
+
+# the fine hairs past a piece's edge: how far out, how far apart, how wide, how long (m), atlas columns, off the skin; `edge`: the
+# mask's value there (the cap shell reaches well past 0.5). The tint on the skin under them: how far out (m, Humans/Skin's _HairEdge,
+# _BeardEdge, _BrowEdge), brows a soft base of their own shape under the hairs
+FRINGE = dict(edge=0.06, reach=0.005, spacing=0.0022, width=0.002, length=(0.004, 0.009), cols=(6, 7), floor=0.0005)
+EDGE_REACH = 0.009
+BROW_REACH, BROW_TINT = 0.0025, 0.7
+
+
+def skin_spine(H, loc, n, tip, floor, bulge):
+    """A hair from loc to tip lying on the skin, `floor` off it (a little more in the middle)."""
+    t_loc, t_n, _ = H.nearest(tip)
+    tip = t_loc + t_n * floor
+    mid = loc + n * bulge * 2.0 + (tip - loc) * 0.4
+    S = []
+    for t in np.linspace(0.0, 1.0, 5):
+        q = loc * (1 - t) ** 2 + mid * 2 * t * (1 - t) + tip * t * t
+        q_loc, q_n, _ = H.nearest(q)
+        h = float(np.dot(q - q_loc, q_n))
+        S.append(q + q_n * (floor - h) if h < floor and t > 0.0 else q)
+    return np.array(S)
+
+
+def on_lips(H, P):
+    """P (N x 3) on the lips or within half a millimetre of them, by their measured edges."""
+    F = H.F
+    ax, z = np.abs(P[:, 0]), P[:, 2] - float(F.mouth[2])
+    return ((ax < 0.0295) & (P[:, 1] < F.chin[1] + 0.02) & (z > np.interp(ax, LIP_LOW_X, LIP_LOW) - 0.0005)
+            & (z < np.interp(ax, TACHE_X_LIP, TACHE_LIP) + 0.0005))
+
+
+def piece_mask(H, name):
+    """A hair or beard piece's area on the skin (> 0.5 inside)."""
+    if name in BROW_CARDS:
+        return brow_mask(H, BROW_CARDS[name])
+    if name in BEARD_CARDS:
+        return beard_outline(H, BEARD_CARDS[name]["shape"])
+    return hum_styles.hair_mask_fn(H, hum_styles.HAIR[STYLES[name]])
+
+
+def edge_block(H, name, P):
+    """Where a piece's edge keeps off (P: N x 3): the nose over a mustache, the throat, the back of a long style (hidden)."""
+    if name in BROW_CARDS:
+        return np.zeros(len(P), bool)
+    if name not in BEARD_CARDS:
+        return np.zeros(len(P), bool) if name in SHORT else P[:, 1] > H.ear_y_front + 0.03
+    F = H.F
+    ax = np.abs(P[:, 0])
+    nose = (P[:, 1] < F.chin[1] + 0.02) & (ax < 0.034) & (P[:, 2] > F.mouth[2] + np.interp(ax, TACHE_X, TACHE_TOP) + 0.0005)
+    return nose | (P[:, 2] < F.chin[2] - 0.012)
+
+
+def edge_fringe(H, name, parts, seed=0, lod=0):
+    """Fine short hairs rooted past the piece's edge, thinning out away from it and combed like the hair next to them, so
+    they run back into it: the edge no longer ends in one line. Out of the sim. Returns a part and its per-loop guides, or None."""
+    import mathutils
+    fr = FRINGE
+    mask = piece_mask(H, name)
+    k_space, k_width = ((1.0, 1.0), (1.9, 1.7))[lod]
+    rng = np.random.default_rng(seed + 401)
+    inside = scalp_points(H, mask, 0.0025, seed + 402, thresh=fr["edge"])
+    kd = mathutils.kdtree.KDTree(len(inside))
+    for i, q in enumerate(inside):
+        kd.insert(q, i)
+    kd.balance()
+
+    def band(P):                                   # (scalp_points' mask: 1 keeps a point)
+        out = np.zeros(len(P))
+        idx = np.flatnonzero(mask(P) <= fr["edge"])
+        d = np.array([kd.find(P[i])[2] for i in idx])
+        near = d < fr["reach"]
+        idx, d = idx[near], d[near]
+        ok = ~edge_block(H, name, P[idx])
+        idx, d = idx[ok], d[ok]
+        ok = ~on_lips(H, P[idx]) & (H.ear_dist(P[idx]) > 0.003)
+        idx, d = idx[ok], d[ok]
+        out[idx] = rng.random(len(idx)) < (1.0 - d / fr["reach"]) ** 1.5
+        return out
+
+    rows = [p.rows for p in parts if getattr(p, "rows", None) is not None]
+    rows_p = np.concatenate([q for q, _ in rows]) if rows else np.zeros((0, 3))
+    rows_t = np.concatenate([q for _, q in rows]) if rows else np.zeros((0, 3))
+    kr = mathutils.kdtree.KDTree(len(rows_p))
+    for i, q in enumerate(rows_p):
+        kr.insert(q, i)
+    kr.balance()
+    roots, spines, W = [], [], []
+    zm = float(H.F.mouth[2])
+    for r0 in scalp_points(H, band, fr["spacing"] * k_space, seed + 403, thresh=0.5):
+        if abs(r0[2] - zm) < 0.02 and abs(r0[0]) < 0.035 and r0[1] < H.ear_y_front:     # inside the mouth, behind the lips
+            if H.bvh.ray_cast(mathutils.Vector(r0) + mathutils.Vector((0, -0.0005, 0)), (0, -1, 0), 0.05)[0] is not None:
+                continue
+        loc, n, _ = H.nearest(r0)
+        if name in BEARD_CARDS and n[2] < -0.35:      # (the beard's underside: its edge is hidden, the hairs only cost)
+            continue
+        d, total = np.zeros(3), 1e-6
+        for co, i, dist in (kr.find_n(loc, 8) if len(rows_p) else ()):
+            if dist < 0.018:
+                d += rows_t[i] / (dist + 0.002)
+                total += 1.0 / (dist + 0.002)
+        d = d - n * np.dot(d, n)
+        if np.linalg.norm(d) < 0.35 * total:
+            d = np.array(kd.find(loc)[0]) - loc        # (no hair to follow, or it stands up: toward the piece)
+            d = d - n * np.dot(d, n)
+        tip = loc + _unit(d) * rng.uniform(*fr["length"])
+        if on_lips(H, tip[None])[0]:
+            continue
+        S = skin_spine(H, loc, n, tip, fr["floor"], 0.0004)
+        roots.append(loc)
+        spines.append(S)
+        v = fr["width"] * k_width * rng.uniform(0.8, 1.2)
+        W.append(lambda q, v=v: v * (0.35 + 0.65 * ss(0.0, 0.4, q)) * (1.0 - 0.7 * ss(0.5, 1.0, q)))
+    if not roots:
+        return None, []
+    ids = hum_styles.coherent_ids(np.array(roots), seed)
+    cc = [fr["cols"][int(rng.integers(len(fr["cols"])))] for _ in spines]
+    p, g, _ = cards_part(H, spines, W, ids, cc, 0.5, row_len=0.004 if lod == 0 else 0.02, max_rows=3 if lod == 0 else 2,
+                         min_rows=3 if lod == 0 else 2, root_sink=0.0, curve=0.03, v0=0.6, spread=0.2,
+                         normal_fns=[lambda q: H.nearest(q)[1]] * len(spines))
+    return p, [(-2.0, gy) for _, gy in g]
+
+
+def bake_edges(names=None, size=256):
+    """export/HairEdge/<piece>.png: the tint a piece lays on the skin in the head's UVs (Humans/Skin _HairEdge, _BeardEdge): 1
+    under it, fading out over EDGE_REACH m past its edge, by distance on the head, so it has no seams."""
+    import mathutils, hum_export
+    head = bpy.data.objects["Head"]
+    keys = head.data.shape_keys.key_blocks
+    saved = {k.name: k.value for k in keys}
+    for k in keys[1:]:
+        k.value = 0.0
+    H = hum_hair.HeadFrame(head)
+    P, valid = hum_paint.bake_map(head, "pos", size)
+    pts = P[valid]
+    out_dir = os.path.join(hum_export.EXPORT, "HairEdge")
+    soft = (~on_lips(H, pts)) * ss(0.001, 0.006, H.ear_dist(pts))
+    made = []
+    for name in names or list(STYLES) + list(BEARD_CARDS) + list(BROW_CARDS):
+        m = piece_mask(H, name)(pts)
+        inside = pts[m > 0.5]
+        kd = mathutils.kdtree.KDTree(len(inside))
+        for i, q in enumerate(inside):
+            kd.insert(q, i)
+        kd.balance()
+        d = np.zeros(len(pts))
+        for i in np.flatnonzero(m <= 0.5):
+            d[i] = kd.find(pts[i])[2]
+        reach, top = (BROW_REACH, BROW_TINT) if name in BROW_CARDS else (EDGE_REACH, 1.0)
+        v = np.where(m > 0.5, 1.0, (1.0 - ss(0.0, reach, d)) ** 1.5) * soft * top
+        v[edge_block(H, name, pts) & (m <= 0.5)] = 0.0
+        M = np.zeros((size, size, 4))
+        M[valid, 0] = M[valid, 1] = M[valid, 2] = v
+        M[..., 3] = 1.0
+        M = hum_paint.dilate(M, valid, 4)
+        piece = ("Brows_" if name in BROW_CARDS else "Beard_" if name in BEARD_CARDS else "Hair_") + name
+        img = hum_paint.save_image("_edge", M, os.path.join(out_dir, piece + ".png"))
+        bpy.data.images.remove(img)
+        made.append(piece)
+    for k, val in saved.items():
+        keys[k].value = val
+    return made
+
+
 def build(scene, H, name, seed=0, lod=0):
     """One spike piece (Hair_<name>[_L<lod>]) in HUM_Hair: the mesh, its HairData layer colour and Guide UVs are
     kept aside for write_guides (CapCut/HoodCut must come first: UV channels 2 and 3)."""
-    parts, guides, npart = (draped_parts(H, name, seed, lod) if name in DRAPED
+    parts, guides, npart = (brow_parts(H, name, seed, lod) if name in BROW_CARDS
+                            else draped_parts(H, name, seed, lod) if name in DRAPED
                             else short_parts(H, name, seed, lod) if name in SHORT
                             else stand_parts(H, name, seed, lod) if name in STAND
                             else beard_card_parts(H, name, seed, lod) if name in BEARD_CARDS
                             else style_parts(H, STYLES[name], seed, lod))
-    obname = ("Beard_" if name in BEARD_CARDS else "Hair_") + name + ("" if lod == 0 else f"_L{lod}")
+    if name not in BROW_CARDS and lod < 2:
+        fringe, g = edge_fringe(H, name, parts, seed, lod)
+        if fringe is not None:
+            parts.append(fringe)
+            guides = list(guides) + g
+    obname = ("Brows_" if name in BROW_CARDS else "Beard_" if name in BEARD_CARDS else "Hair_") + name + ("" if lod == 0 else f"_L{lod}")
     me = hum_hair.mesh_from_parts(obname, parts)
     lay = np.concatenate([np.asarray(p.layer, np.float32) for p in parts if len(p.verts)])
     col = me.color_attributes["HairData"]
@@ -1893,13 +2144,15 @@ def build_all(head=None, lods=(0, 1, 2), names=None):
     mat = material()
     sc = hum_build.scene()
     made = []
-    for name in (names or list(STYLES) + list(BEARD_CARDS)):
+    for name in (names or list(STYLES) + list(BEARD_CARDS) + list(BROW_CARDS)):
         for lod in lods:
+            if lod == 2 and name in BROW_CARDS:         # (the head's painted brows, as the clump ones)
+                continue
             own_l2 = name in STAND or name in BEARD_CARDS   # (a clump beard's LOD2 is its shell: a long beard gone)
             ob = lod2_copy(sc, name) if lod == 2 and not own_l2 else build(sc, H, name, lod=lod)
             hum_paint.set_materials(ob, [mat])
             nk, err = hum_hair.bind_keys(ob, head)
-            if name not in BEARD_CARDS:                 # (beards keep exact keys, as the clump ones)
+            if name not in BEARD_CARDS and name not in BROW_CARDS:     # (beards keep exact keys, as the clump ones)
                 hum_hair.smooth_keys_spatial(ob)
             if name in DRAPED and lod != 2:
                 nk = draped_keys(ob, H)
@@ -1913,7 +2166,7 @@ def build_all(head=None, lods=(0, 1, 2), names=None):
         write_guides(ob)
         base = n.split("_", 1)[1]
         base = base[:-3] if base[-3:-1] == "_L" else base      # (split("_L") cut "LongStrands" at "_Long")
-        if base in BEARD_CARDS:
+        if base in BEARD_CARDS or base in BROW_CARDS:
             hum_rig.rigid(ob, arm, sk, "head")
         else:
             hum_rig.skin(ob, arm, sk, (draped_weights if base in DRAPED else hum_hair.hair_weights)(ob, sk, arm))
@@ -1939,7 +2192,7 @@ def export(path=None):
         pb.location = (0, 0, 0)
     saved_scale = tuple(arm.scale)
     arm.scale = (1, 1, 1)
-    names = tuple("Hair_" + n for n in STYLES) + tuple("Beard_" + n for n in BEARD_CARDS)
+    names = tuple("Hair_" + n for n in STYLES) + tuple("Beard_" + n for n in BEARD_CARDS) + tuple("Brows_" + n for n in BROW_CARDS)
     pieces = sorted((o for o in bpy.data.objects if o.name.startswith(names)),
                     key=lambda o: o.name)
     for o in pieces:

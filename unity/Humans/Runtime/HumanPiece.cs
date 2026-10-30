@@ -32,6 +32,9 @@ namespace Humans
         [Tooltip("By LOD index; an entry without a mesh: the piece has no such LOD (brows at LOD2)")]
         public Lod[] lods = new Lod[0];
 
+        [Tooltip("Strand hair and beards: the tint it lays on the skin in the head's UVs, fading out past its edge")]
+        public Texture2D edge;
+
         /// <summary>How thick the piece is round a limb (HumanClothPush: the cloth pushed off that limb clears it), from
         /// its LOD0 at setup - the meshes aren't readable in a build.</summary>
         [Serializable]

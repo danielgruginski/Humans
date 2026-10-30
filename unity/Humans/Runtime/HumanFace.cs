@@ -62,6 +62,8 @@ namespace Humans
             IdStubble = Shader.PropertyToID("_Stubble"), IdAge = Shader.PropertyToID("_Age"),
             IdBrows = Shader.PropertyToID("_Brows"), IdScalp = Shader.PropertyToID("_Scalp"),
             IdBeardShadow = Shader.PropertyToID("_BeardShadow"), IdIris = Shader.PropertyToID("_Iris"),
+            IdHairEdge = Shader.PropertyToID("_HairEdge"), IdBeardEdge = Shader.PropertyToID("_BeardEdge"),
+            IdBrowEdge = Shader.PropertyToID("_BrowEdge"),
             IdRoot = Shader.PropertyToID("_HairRoot"), IdTip = Shader.PropertyToID("_HairTip"),
             IdStreak = Shader.PropertyToID("_HairStreak"), IdStreaks = Shader.PropertyToID("_Streaks"),
             IdOmbre = Shader.PropertyToID("_Ombre"), IdCloth = Shader.PropertyToID("_Cloth"),
@@ -129,6 +131,15 @@ namespace Humans
         {
             string strands = prefix + style + StrandSuffix;
             return PieceSet.Contains(strands) ? strands : prefix + style;
+        }
+
+        /// <summary>the tint a worn strand piece lays on the skin past its edge (black: none)</summary>
+        Texture EdgeOf(string prefix, string style, bool hidden)
+        {
+            if (hidden || string.IsNullOrEmpty(style)) return Texture2D.blackTexture;
+            string p = PieceFor(prefix, style);
+            var edge = PieceSet.Contains(p) ? LoadPiece(p)?.edge : null;
+            return edge != null ? edge : Texture2D.blackTexture;
         }
 
         /// <summary>the pieces there are (a prefab from before they were cut out: the ones it carries)</summary>
@@ -422,6 +433,9 @@ namespace Humans
             mpb.SetFloat(IdScalp, string.IsNullOrEmpty(face.hairStyle) ? 0f : face.hairlineTint);
             // (the skin's tint is painted to the clump beards' outline: it would show around a strand beard's)
             mpb.SetFloat(IdBeardShadow, string.IsNullOrEmpty(face.beardStyle) || PieceFor("Beard_", face.beardStyle).EndsWith(StrandSuffix) ? 0f : face.beardShadow);
+            mpb.SetTexture(IdHairEdge, EdgeOf("Hair_", face.hairStyle, Config.HidesHair(face.GarmentNames) || Config.HidesFaceHair(face.GarmentNames)));
+            mpb.SetTexture(IdBeardEdge, EdgeOf("Beard_", face.beardStyle, Config.HidesFaceHair(face.GarmentNames)));
+            mpb.SetTexture(IdBrowEdge, EdgeOf("Brows_", face.browStyle, Config.HidesFaceHair(face.GarmentNames)));
             mpb.SetFloat(IdRot, face.rot);
             mpb.SetVector(IdWounds, face.wounds);
             head.SetPropertyBlock(mpb, 0);
@@ -440,7 +454,7 @@ namespace Humans
             {
                 if (!noHair && !string.IsNullOrEmpty(face.hairStyle)) want.Add(PieceFor("Hair_", face.hairStyle));
                 if (!string.IsNullOrEmpty(face.beardStyle)) want.Add(PieceFor("Beard_", face.beardStyle));
-                if (!string.IsNullOrEmpty(face.browStyle)) want.Add("Brows_" + face.browStyle);
+                if (!string.IsNullOrEmpty(face.browStyle)) want.Add(PieceFor("Brows_", face.browStyle));
             }
             foreach (Transform t in hairRoot)
             {

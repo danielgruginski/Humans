@@ -8,6 +8,9 @@ Shader "Humans/Skin"
         [NoScaleOffset] _MaskA ("Mask A (blush, lips, shading, lash)", 2D) = "black" {}
         [NoScaleOffset] _MaskB ("Mask B (stubble, age, freckles, brows)", 2D) = "black" {}
         [NoScaleOffset] _MaskC ("Mask C (hairline, beard area)", 2D) = "black" {}
+        [NoScaleOffset] _HairEdge ("Hair style's tint past its edge", 2D) = "black" {}
+        [NoScaleOffset] _BeardEdge ("Beard style's tint past its edge", 2D) = "black" {}
+        [NoScaleOffset] _BrowEdge ("Brow style's soft base", 2D) = "black" {}
         [NoScaleOffset] _RotMask ("Rot (blotches, wounds A, wounds B, hollows)", 2D) = "black" {}
         _Tone ("Skin tone", Color) = (0.81, 0.59, 0.44, 1)
         _Lip ("Lip", Color) = (0.74, 0.47, 0.40, 1)
@@ -56,6 +59,9 @@ Shader "Humans/Skin"
             TEXTURE2D(_MaskA); SAMPLER(sampler_MaskA);
             TEXTURE2D(_MaskB); SAMPLER(sampler_MaskB);
             TEXTURE2D(_MaskC); SAMPLER(sampler_MaskC);
+            TEXTURE2D(_HairEdge);
+            TEXTURE2D(_BeardEdge);
+            TEXTURE2D(_BrowEdge);
             TEXTURE2D(_RotMask); SAMPLER(sampler_RotMask);
             CBUFFER_START(UnityPerMaterial)
                 half4 _Tone, _Lip, _Hair, _Lash;
@@ -87,6 +93,9 @@ Shader "Humans/Skin"
                 col *= a.b * SHADE_MAX;
                 col = lerp(col, lerp(col, hair * 0.9, 0.75), c.r * _Scalp);
                 col = lerp(col, lerp(col, hair * 0.8, 0.5), c.g * _BeardShadow);
+                // the worn strand pieces' soft shadow past their edges (the cards themselves are cut hard)
+                half edge = max(max(SAMPLE_TEXTURE2D(_HairEdge, sampler_MaskC, i.uv.xy).r, SAMPLE_TEXTURE2D(_BeardEdge, sampler_MaskC, i.uv.xy).r), SAMPLE_TEXTURE2D(_BrowEdge, sampler_MaskC, i.uv.xy).r);
+                col = lerp(col, lerp(col, hair, 0.7) * 0.8, edge * 0.85);
                 return HumanShadeSkin(i, col, lerp(_Smoothness, 0.6, wet), lerp(_Specular, 0.04, wet), _Scatter * (1 - wet), _Breakup);
             }
             ENDHLSL

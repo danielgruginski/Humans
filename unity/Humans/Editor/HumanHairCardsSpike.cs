@@ -21,6 +21,8 @@ namespace Humans.EditorTools
         const string MatPath = Root + "/Materials/M_HumanHairCards.mat";
         public static readonly string[] Styles = { "LongStrands", "LongThinStrands", "PonytailStrands", "CropStrands", "SweptStrands", "BunStrands", "SidePartStrands", "CurlyStrands", "MohawkStrands" };
         public static readonly string[] BeardStyles = { "FullStrands", "WizardStrands", "DwarfStrands", "GoateeStrands", "MustacheStrands", "ShortStrands", "ShortSideburnsStrands", "ChinStrapStrands" };
+        public static readonly string[] BrowStyles = { "NormalStrands", "ThinStrands", "BushyStrands", "StraightStrands" };
+        const string EdgeDir = Root + "/Textures/HairEdge";
         const float ShortHair = 0.09f;
 
         [MenuItem("Tools/Humans/Hair Cards Spike/Install")]
@@ -100,6 +102,7 @@ namespace Humans.EditorTools
                 bool fresh = asset == null;
                 if (fresh) asset = ScriptableObject.CreateInstance<HumanPiece>();
                 asset.lods = kv.Value.ToArray();
+                asset.edge = EdgeTexture(kv.Key);
                 asset.limbs = new HumanPiece.LimbFit[0];
                 // the sim's data per LOD (LOD2, the colony camera, isn't simulated)
                 asset.hairSim = asset.lods.Select((l, i) => i < 2 && l.mesh != null ? HairSimOf(l.mesh, l.bones, HeadVerts()) : new HumanPiece.HairSim()).ToArray();
@@ -264,7 +267,24 @@ namespace Humans.EditorTools
             return d;
         }
 
-        public static IEnumerable<string> PieceNames() => Styles.Select(s => "Hair_" + s).Concat(BeardStyles.Select(s => "Beard_" + s));
+        /// <summary>A piece's tint on the skin (hum_cards.bake_edges), as data; none: null.</summary>
+        static Texture2D EdgeTexture(string piece)
+        {
+            string path = $"{EdgeDir}/{piece}.png";
+            if (!(AssetImporter.GetAtPath(path) is TextureImporter ti)) return null;
+            if (ti.sRGBTexture || ti.alphaSource != TextureImporterAlphaSource.None || ti.maxTextureSize != 256 || ti.wrapMode != TextureWrapMode.Clamp)
+            {
+                ti.sRGBTexture = false;
+                ti.alphaSource = TextureImporterAlphaSource.None;
+                ti.maxTextureSize = 256;
+                ti.wrapMode = TextureWrapMode.Clamp;
+                ti.textureCompression = TextureImporterCompression.Compressed;
+                ti.SaveAndReimport();
+            }
+            return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+        }
+
+        public static IEnumerable<string> PieceNames() => Styles.Select(s => "Hair_" + s).Concat(BeardStyles.Select(s => "Beard_" + s)).Concat(BrowStyles.Select(s => "Brows_" + s));
 
         /// <summary>A human offers these pieces too: HumanFace wears them for their plain styles.</summary>
         public static void Offer(HumanFace hf)
