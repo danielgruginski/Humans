@@ -5,9 +5,10 @@ clips and wears the same clothes and armour (built on the Undead builds, the tig
 Built per build in build space like any garment (hum_builds.BuildSpace), measured off that build's body, head and
 joints, every piece rigid on one bone (no weight bleed; joints part a little when bent, as bones do):
 
-skull      distance-field sculpt (openvdb): cranium fitted to the head, brow, cheekbones, zygomatic arches, maxilla;
-           orbits, nasal opening and temples carved; teeth as small blocks; a separate mandible (on the head bone:
-           there is no jaw bone), jaw a little open; a cold light deep in each orbit (material slot 1, "glow")
+skull      distance-field sculpt (openvdb): vault fitted to the head (parietals, frontal, occipital), brow, cheekbones,
+           free zygomatic arches, maxilla with its gums; orbits (tapered), nasal opening and temples carved; teeth as
+           tapered blocks along two arches; a separate mandible (on the head bone: there is no jaw bone), jaw a little
+           open; a cold light deep in each orbit (material slot 1, "glow")
 spine      24 vertebrae under the back's skin: bodies and spines, lumbar side processes (pelvis .. neck_01)
 ribcage    9 rib pairs along the same lines hum_undead paints on the zombies (rib_phase), inset under the skin,
            running into a sternum; the upper ones on spine_03, the lower on spine_02
@@ -203,10 +204,10 @@ def block(c, half, R=None):
 def decimate(V, F, target):
     """Collapse-decimate a mesh to about `target` triangles (a throwaway object and Blender's modifier): the
     distance-field meshes come out of openvdb at voxel density, far over budget."""
-    import bpy
     n = sum(len(f) - 2 for f in F)
     if n <= target:
         return V, F
+    import bpy
     me = bpy.data.meshes.new("_skel_dec")
     me.from_pydata(np.asarray(V).tolist(), [], [list(f) for f in F])
     ob = bpy.data.objects.new("_skel_dec", me)
@@ -226,6 +227,104 @@ def decimate(V, F, target):
     return V2, F2
 
 
+def decimate_mirrored(V, F, target, limit=135.0):
+    """decimate for a mesh symmetric in x: one side, then mirrored. Over the whole skull the collapses chewed one
+    orbit's rim and not the other (black slits, a lopsided face). Edges still folded past `limit` degrees collapse first."""
+    import bmesh
+    bm = bmesh.new()
+    vs = [bm.verts.new(p) for p in V]
+    for f in F:
+        bm.faces.new([vs[i] for i in f])
+    bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], plane_co=(0, 0, 0), plane_no=(1, 0, 0),
+                           clear_inner=True)
+    bm.verts.index_update()
+    V1 = np.array([v.co[:] for v in bm.verts])
+    F1 = [tuple(v.index for v in f.verts) for f in bm.faces]
+    bm.free()
+    V1, F1 = decimate(V1, F1, target // 2)
+    bm = bmesh.new()
+    vs = [bm.verts.new(p) for p in V1]
+    for f in F1:
+        bm.faces.new([vs[i] for i in f])
+    for _ in range(12):
+        bm.normal_update()
+        bad = next((e for e in bm.edges if len(e.link_faces) == 2 and e.calc_face_angle(0.0) > math.radians(limit)), None)
+        if bad is None:
+            break
+        bmesh.ops.collapse(bm, edges=[bad], uvs=False)
+    for v in bm.verts:                                     # the cut's edge stays on the plane
+        if v.is_boundary:
+            v.co.x = 0.0
+    n1 = len(bm.verts)
+    bm.verts.index_update()
+    V1 = np.array([v.co[:] for v in bm.verts])
+    F1 = [tuple(v.index for v in f.verts) for f in bm.faces]
+    vs = list(bm.verts)
+    vs += [bm.verts.new((-x, y, z)) for x, y, z in V1]
+    for f in F1:
+        bm.faces.new([vs[n1 + i] for i in reversed(f)])
+    bmesh.ops.remove_doubles(bm, verts=bm.verts[:], dist=1e-5)
+    bm.verts.index_update()
+    V2 = np.array([v.co[:] for v in bm.verts])
+    F2 = [tuple(v.index for v in f.verts) for f in bm.faces]
+    bm.free()
+    return V2, F2
+
+
+def sd_orbit(P, c, s):
+    """An eye socket: a rounded rectangle (its outer side lower) narrowing as it goes back (+y)."""
+    tilt = math.radians(9)
+    x = np.array([math.cos(tilt), 0.0, -s * math.sin(tilt)])
+    R = np.stack([x, [0.0, 1.0, 0.0], np.cross(x, [0.0, 1.0, 0.0])], 1)
+    q = (P - c) @ R
+    f = 1.0 - 0.55 * np.clip(q[..., 1] / 0.04, 0, 1)
+    q = q * np.stack([1 / f, np.ones_like(f), 1 / f], -1)
+    return sd_box(q, np.zeros(3), (0.0215, 0.036, 0.0188), rnd=0.015)
+
+
+def sd_nasal(P, y, ez):
+    """The nose's opening, a pear: narrow under the nasal bones, two lobes below, cut straight back."""
+    Q = P.copy()
+    Q[..., 1] = y
+    d = None
+    for s in (1, -1):
+        e = sd_capsule(Q, np.array([s * 0.0015, y, ez - 0.0085]), np.array([s * 0.0078, y, ez - 0.0345]), 0.0032, 0.0086)
+        d = e if d is None else smin(d, e, 0.002)
+    return smax(d, np.abs(P[..., 1] - (y + 0.012)) - 0.034, 0.002)
+
+
+def dental_at(arch, a, inset=0.0):
+    """A point (x, y) of a dental arch at parameter a (0 at the middle in front), `inset` towards its inside."""
+    x, y = arch["rx"] * math.sin(a), arch["y0"] + arch["ry"] * (1 - math.cos(a))
+    if inset:
+        tx, ty = arch["rx"] * math.cos(a), arch["ry"] * math.sin(a)
+        n = math.hypot(tx, ty)
+        x, y = x + ty / n * inset, y - tx / n * inset
+    return np.array([x, y])
+
+
+def dental_arc(arch, length, step=0.005):
+    """The parameter a at this arc length along the arch."""
+    a, u, p = 0.0, 0.0, dental_at(arch, 0.0)
+    while u < length and a < 2.0:
+        a += step
+        q = dental_at(arch, a)
+        u += float(np.linalg.norm(q - p))
+        p = q
+    return a
+
+
+def tooth(edge, half, h, up, R):
+    """A tooth: its biting edge's centre at `edge`, narrower towards the root (`up` +1 above the edge, -1 below); R's
+    columns are along the arch, outward and up."""
+    w, t = half
+    V = []
+    for z, f in ((0.0, 1.0), (h, 0.74)):
+        V += [[sx * w * f, sy * t * f, z * up * np.sign(R[2, 2])] for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+    F = [(0, 3, 2, 1), (4, 5, 6, 7), (0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)]
+    return np.array(V) @ R.T + edge, F
+
+
 def _signed_volume(V, F):
     vol = 0.0
     for f in F:
@@ -239,14 +338,14 @@ def _signed_volume(V, F):
 LODS = {      # dec: triangle budgets of the distance-field pieces (decimated); fr: rings per finger bone
     # (the humans' body + head: 27.8k / 7.4k / 3.2k triangles; the skeleton replaces both)
     0: dict(sides=6, small=4, vsides=5, rib_segs=10, rib_sides=4, voxel=0.0018, adapt=0.0, vox_skull=0.0016,
-            teeth=True, processes=True, glow=(6, 4), fr=3, every_vert=1, simple=False, palm=False, extras=True,
-            dec=dict(skull=1200, jaw=420, pelvis=700, scapula=110)),
+            teeth=1, processes=True, glow=(6, 4), fr=3, every_vert=1, simple=False, palm=False, extras=True,
+            dec=dict(skull=1700, jaw=460, pelvis=700, scapula=110)),
     1: dict(sides=5, small=3, vsides=4, rib_segs=5, rib_sides=3, voxel=0.0026, adapt=0.0, vox_skull=0.002,
-            teeth=False, processes=False, glow=(5, 3), fr=2, every_vert=2, simple=False, palm=True, extras=True,
+            teeth=2, processes=False, glow=(5, 3), fr=2, every_vert=2, simple=False, palm=True, extras=True,
             dec=dict(skull=520, jaw=140, pelvis=260, scapula=44)),
     2: dict(sides=4, small=3, vsides=3, rib_segs=3, rib_sides=3, voxel=0.0035, adapt=0.0, vox_skull=0.003,
-            teeth=False, processes=False, glow=(4, 3), fr=2, every_vert=2, simple=True, palm=True, extras=False,
-            dec=dict(skull=200, jaw=50, pelvis=100, scapula=20)),
+            teeth=3, processes=False, glow=(4, 3), fr=2, every_vert=2, simple=True, palm=True, extras=False,
+            dec=dict(skull=300, jaw=56, pelvis=100, scapula=20)),
 }
 
 
@@ -300,6 +399,8 @@ class Skel:
     # -------------------------------------------------------------- head
 
     def skull(self):
+        """Fitted to the head (a real skull's proportions sit inside it): the vault from three overlapping bones,
+        so the forehead rises and the back of the head bulges and tucks under (one ellipsoid read as an egg)."""
         F, Hm, L = self.F, self.H, self.L
         el, er = F.eye["l"][0], F.eye["r"][0]
         ex = abs(el[0])
@@ -312,101 +413,145 @@ class Skel:
         front = float(fb[:, 1].min())
         m = F.mouth
         self.sk_dims = dict(ex=ex, ey=ey, ez=ez, top=top, back=back, wh=wh, front=front)
-        ax, ay = wh - 0.0045, (back - front) / 2 - 0.005
-        cc = np.array([0.0, (front + back) / 2 + 0.002, ez + 0.017])
-        az = min(top - 0.006 - cc[2], 1.12 * ax)      # the stylised head's tall crown made a skull like an egg
-        cheek = [np.array([s * (ex + 0.009), ey + 0.006, ez - 0.022]) for s in (1, -1)]
-        arch_end = [np.array([s * (ax - 0.003), ey + 0.058, ez - 0.022]) for s in (1, -1)]
-        mtop = m[2] + 0.004                                  # the upper teeth's roots
-        maxc = np.array([0.0, m[1] + 0.024, (ez - 0.03 + mtop) / 2])
-        maxh = np.array([0.025, 0.021, (ez - 0.03 - mtop) / 2 + 0.006])
+        W = wh - 0.0045                                       # half the vault's width
+        # its front and length: a skull is shorter than the stylised head (full length read as an egg from above)
+        y0, Ln = front + 0.004, min(back - front - 0.008, 2.64 * W)
+        Hv = min(top - 0.0055 - ez, 0.104)                    # its height above the eyes (the head's crown is taller)
+        brow = 0.75 if str(C.BUILD["tag"]).startswith("F") else 1.0     # a woman's brow ridge is slighter
+        ey_ear = float(F.ear_y)
+        arch_end = ey_ear - 0.012
+        at = lambda x, dy, dz: np.array([x, ey + dy, ez + dz])
+        # the upper teeth's arch: its gum ridge in the maxilla, its teeth below
+        ya = float(m[1]) + 0.0095
+        arch_u = dict(y0=ya, rx=0.0285, ry=0.04)
+        ridge_z = float(m[2]) + 0.0155
+        ridge = [dental_at(arch_u, a, -0.0075) for a in np.linspace(0, 1.45, 7)]
 
         def fn(P):
-            d = sd_ellipsoid(P, cc, (ax, ay, az))
-            d = smax(d, (ez - 0.047) - P[..., 2], 0.012)                 # the base of the skull
-            face = sd_box(P, maxc, maxh, rnd=0.011)
-            for c in cheek:
-                face = smin(face, sd_sphere(P, c, 0.0135), 0.012)
-            face = smin(face, sd_capsule(P, np.array([-(ex + 0.016), ey - 0.0015, ez + 0.017]),
-                                         np.array([ex + 0.016, ey - 0.0015, ez + 0.017]), 0.0085), 0.01)
-            face = smin(face, sd_capsule(P, np.array([0, ey - 0.006, ez + 0.012]),
-                                         np.array([0, ey - 0.011, ez - 0.014]), 0.0055), 0.006)
-            for c, e in zip(cheek, arch_end):
-                face = smin(face, sd_capsule(P, c, e, 0.0052), 0.006)
+            d = sd_ellipsoid(P, np.array([0, y0 + 0.55 * Ln, ez + 0.3 * Hv]), (W, 0.43 * Ln, 0.7 * Hv))    # parietals
+            d = smin(d, sd_ellipsoid(P, np.array([0, y0 + 0.3 * Ln, ez + 0.36 * Hv]),
+                                     (0.8 * W, 0.3 * Ln, 0.6 * Hv)), 0.012)                                 # frontal
+            d = smin(d, sd_ellipsoid(P, np.array([0, y0 + 0.76 * Ln, ez + 0.12 * Hv]),
+                                     (0.76 * W, 0.24 * Ln, 0.46 * Hv)), 0.012)                              # occipital
+            d = smin(d, sd_ellipsoid(P, np.array([0, y0 + 0.56 * Ln, ez - 0.006]), (0.86 * W, 0.28 * Ln, 0.04)), 0.012)
+            d = smax(d, np.abs(P[..., 0]) - W * 0.985, 0.014)                 # the sides are flatter than an ellipse
+            d = smax(d, (ez - 0.046) - P[..., 2], 0.01)                       # the base
+            for s in (1, -1):                                                 # temples: behind the orbit's outer rim
+                d = sub(d, sd_ellipsoid(P, at(s * 0.0715, 0.056, -0.002), (0.0145, 0.03, 0.029)), 0.012)
+            # the face, in front of and below the vault
+            face = sd_ellipsoid(P, at(0, 0.015, 0.002), (0.059, 0.031, 0.037))            # round the orbits: solid
+            face = smin(face, sd_ellipsoid(P, at(0, 0.004, -0.03), (0.043, 0.021, 0.018)), 0.008)
+            max_lo = float(m[2]) + 0.0125                                     # the maxilla ends above the teeth
+            face = smin(face, sd_box(P, np.array([0, ey + 0.009, (ez - 0.03 + max_lo) / 2]),
+                                     (0.029, 0.021, (ez - 0.03 - max_lo) / 2), rnd=0.009), 0.012)
+            face = smin(face, sd_box(P, at(0, 0.036, -0.042), (0.03, 0.03, 0.02), rnd=0.012), 0.008)     # behind the palate
             for s in (1, -1):
-                face = smin(face, sd_sphere(P, np.array([s * (ax - 0.013), ey + 0.082, ez - 0.044]), 0.008), 0.01)
-            d = smin(d, face, 0.014)
-            for e in (el, er):                                             # the orbits
-                d = sub(d, sd_ellipsoid(P, e + np.array([0, -0.006, 0.001]), (0.0185, 0.03, 0.0172)), 0.0025)
-            d = sub(d, sd_ellipsoid(P, np.array([0, ey - 0.012, ez - 0.036]), (0.0095, 0.03, 0.0145)), 0.002)
-            for s in (1, -1):                                             # temples
-                d = sub(d, sd_ellipsoid(P, np.array([s * (ax + 0.007), ey + 0.046, ez + 0.003]),
-                                        (0.012, 0.028, 0.022)), 0.008)
+                for a, b in zip(ridge[:-1], ridge[1:]):                       # the upper gums
+                    face = smin(face, sd_capsule(P, np.array([s * a[0], a[1], ridge_z]),
+                                                 np.array([s * b[0], b[1], ridge_z]), 0.0085), 0.004)
+                mal = at(s * (ex + 0.0265), 0.008, -0.033)
+                face = smin(face, sd_triangle(P, at(s * (ex + 0.0245), 0.002, -0.012), mal,
+                                              at(s * (ex + 0.004), -0.009, -0.031)) - 0.0062, 0.008)   # cheekbones
+                face = smin(face, sd_capsule(P, mal + np.array([-s * 0.006, -0.002, -0.004]),
+                                             np.array([s * 0.0305, ey + 0.012, ridge_z + 0.004]), 0.0062, 0.0052), 0.008)
+                face = smin(face, sd_capsule(P, at(s * 0.0105, -0.013, -0.02), at(s * 0.0095, -0.018, 0.014), 0.0062),
+                            0.006)                                                            # beside the nose
+                for dz in (0.0028, -0.0028):                                  # the arch: a ribbon, free of the temple
+                    face = smin(face, sd_capsule(P, mal + np.array([0, 0.002, dz]),
+                                                 np.array([s * W * 0.93, arch_end, ez - 0.025 + dz]), 0.0038, 0.0032), 0.003)
+                face = smin(face, sd_ellipsoid(P, np.array([s * W * 0.8, arch_end + 0.006, ez - 0.026]),
+                                               (0.0135, 0.015, 0.0115)), 0.006)
+                face = smin(face, sd_capsule(P, np.array([s * W * 0.8, ey_ear + 0.012, ez - 0.034]),
+                                             np.array([s * W * 0.77, ey_ear + 0.012, ez - 0.05]), 0.0105, 0.0068), 0.008)
+                # the brow's ridge, over the orbit from the glabella to the outer rim
+                face = smin(face, sd_capsule(P, at(s * 0.006, -0.018, 0.024), at(s * 0.032, -0.0115, 0.0255),
+                                             0.0055 * brow), 0.012)
+                face = smin(face, sd_capsule(P, at(s * 0.032, -0.0115, 0.0255), at(s * (ex + 0.0235), 0.0, 0.015),
+                                             0.0055 * brow, 0.005), 0.012)
+            face = smin(face, sd_ellipsoid(P, at(0, -0.0195, 0.0015), (0.0088, 0.0062, 0.0135)), 0.005)  # the nasal bones
+            d = smin(d, face, 0.01)
+            for s, e in ((1, el), (-1, er)):                                  # the orbits
+                d = sub(d, sd_orbit(P, e + np.array([s * 0.0035, -0.002, 0.0005]), s), 0.002)
+            d = sub(d, sd_nasal(P, ey - 0.01, ez), 0.0015)                    # the nose's opening
+            if L["teeth"] == 1:
+                d = smin(d, sd_box(P, at(0, -0.002, -0.032), (0.0016, 0.012, 0.012), rnd=0.001), 0.001)  # its septum
             return d
-        lo = np.array([-ax - 0.01, front - 0.03, ez - 0.075])
-        hi = np.array([ax + 0.01, back + 0.005, top + 0.004])
-        V, Fc = decimate(*sdf_mesh(fn, lo, hi, L["vox_skull"], L["adapt"]), L["dec"]["skull"])
+        lo = np.array([-W - 0.01, front - 0.015, ez - 0.075])
+        hi = np.array([W + 0.01, back + 0.005, top + 0.004])
+        V, Fc = decimate_mirrored(*sdf_mesh(fn, lo, hi, L["vox_skull"], L["adapt"]), L["dec"]["skull"])
         self.add(V, Fc, "head")
-        # the mandible: a U along the jaw, the ramus up to under the arch's end, the chin; a little open
-        chin, cz = F.chin, float(F.chin[2])
+        # the mandible: a solid U under the teeth (square at the chin), broad rami up behind the arches; a little open
+        chin = F.chin
         lowj = Hm[(np.abs(Hm[:, 0]) < 0.02) & (Hm[:, 1] < chin[1] + 0.03)]
-        cbot = float(lowj[:, 2].min()) + 0.006
+        cbot = float(lowj[:, 2].min()) + 0.012
         jw = Hm[(Hm[:, 2] > cbot) & (Hm[:, 2] < cbot + 0.035) & (Hm[:, 1] > chin[1] + 0.03)]
-        jx = float(np.abs(jw[:, 0]).max()) - 0.009
-        jy = float(jw[np.argmax(np.abs(jw[:, 0])), 1])
-        opn = 0.004
-        lowz = lambda t: cbot + 0.006 + 0.012 * t - opn
-        hiz = lambda t: m[2] - 0.006 - opn + (cbot + 0.026 - (m[2] - 0.006)) * ss(0.4, 1.0, t)
+        gx = float(np.abs(jw[:, 0]).max()) - 0.012
+        opn = 0.0045
+        cond = np.array([W - 0.012, arch_end + 0.002, ez - 0.035])
+        cor = np.array([ex + 0.019, cond[1] - 0.032, ez - 0.026])
+        gy = float(cond[1]) - 0.006
+        zlow = lambda t: cbot + 0.022 * t ** 1.4 - opn
+        zhigh = float(m[2]) - opn - 0.0125
+        ychin = float(chin[1]) + 0.007
+        arch_l = dict(y0=ya + 0.0015, rx=0.0265, ry=0.038)
+        froot = np.array([0.033, gy - 0.03, zhigh])
         ts = np.linspace(0, 1, 9)
         low, high = [], []
         for t in ts:                                          # the jaw's lower border and its upper (teeth) edge
-            x = jx * t
-            y = chin[1] + 0.006 + (jy - chin[1] - 0.006) * t ** 1.6
-            low.append(np.array([x, y, lowz(t)]))
-            high.append(np.array([x, y + 0.004, hiz(t)]))
+            q = t ** 1.7
+            low.append(np.array([gx * q ** 0.44, ychin + (gy - ychin) * q, zlow(t)]))
+            a = t * np.pi / 2
+            high.append(np.array([froot[0] * np.sin(a), arch_l["y0"] + (froot[1] - arch_l["y0"]) * (1 - np.cos(a)), zhigh]))
         mir = lambda p, s: p * np.array([s, 1, 1])
+        go = low[-1]
 
         def fj(P):
             d = None
             for s in (1, -1):
-                for i in range(len(ts) - 1):                 # a plate between the borders, a rounded lower rim
+                for i in range(len(ts) - 1):                 # a thick plate between the borders, rounded below
                     a, b, c, e = (mir(low[i], s), mir(low[i + 1], s), mir(high[i + 1], s), mir(high[i], s))
                     q = np.minimum(sd_triangle(P, a, b, c), sd_triangle(P, a, c, e)) - 0.0042
-                    q = smin(q, sd_capsule(P, a, b, 0.0055 - 0.001 * ts[i]), 0.004)
-                    d = q if d is None else smin(d, q, 0.003)
-                ang = np.array([s * jx, jy, cbot + 0.014 - opn])
-                cond = np.array([s * (ax - 0.012), ey + 0.068, ez - 0.034])
-                cor = np.array([s * (ex + 0.018), ey + 0.046, ez - 0.038])
-                ram = sd_triangle(P, ang, cond, cor) - 0.0035                 # the ramus: a plate
-                notch = (cond + cor) / 2 + np.array([0, 0, 0.002])
-                ram = sub(ram, sd_sphere(P, notch, np.linalg.norm(cond - cor) * 0.36), 0.002)
-                ram = smin(ram, sd_capsule(P, ang, cond, 0.005, 0.0055), 0.004)
+                    q = smin(q, sd_capsule(P, a, b, 0.0056 - 0.0012 * ts[i]), 0.004)
+                    d = q if d is None else smin(d, q, 0.005)
+                G, Fr, Co, Cd = mir(go, s), mir(froot, s), mir(cor, s), mir(cond, s)
+                ram = np.minimum(sd_triangle(P, G, Fr, Co), sd_triangle(P, G, Co, Cd)) - 0.0033       # the ramus: a plate
+                notch = (Cd + Co) / 2 + np.array([0, 0, 0.006])
+                ram = sub(ram, sd_sphere(P, notch, np.linalg.norm(Cd - Co) * 0.34), 0.002)
+                ram = smin(ram, sd_capsule(P, G, Cd, 0.0052, 0.0055), 0.004)                          # its back edge
+                ram = smin(ram, sd_capsule(P, Fr, Co, 0.0048, 0.0036), 0.004)                         # its front edge
+                ram = smin(ram, sd_ellipsoid(P, Cd + np.array([0, 0, 0.002]), (0.0095, 0.0062, 0.0058)), 0.003)
                 d = smin(d, ram, 0.006)
-            d = smin(d, sd_sphere(P, np.array([0, chin[1] + 0.007, cbot + 0.008 - opn]), 0.0075), 0.006)
+            for s in (1, -1):                                 # the chin's two corners
+                d = smin(d, sd_sphere(P, np.array([s * 0.0085, ychin + 0.001, cbot + 0.0065 - opn]), 0.0058), 0.008)
             return d
-        lo = np.array([-ax, chin[1] - 0.01, cbot - 0.012])
-        hi = np.array([ax, ey + 0.085, ez - 0.02])
-        V, Fj = decimate(*sdf_mesh(fj, lo, hi, L["vox_skull"], L["adapt"]), L["dec"]["jaw"])
+        lo = np.array([-W, ychin - 0.012, cbot - 0.012 - opn])
+        hi = np.array([W, float(cond[1]) + 0.012, ez - 0.012])
+        V, Fj = decimate_mirrored(*sdf_mesh(fj, lo, hi, L["vox_skull"], L["adapt"]), L["dec"]["jaw"])
         self.add(V, Fj, "head")
-        # teeth: blocks along an arc behind the lips, upper and lower
-        if L["teeth"]:
-            for row, (z0, h) in enumerate(((mtop - 0.0005, 0.0085), (m[2] - 0.0035 - opn, 0.0075))):
-                n = 10
-                for i in range(n):
-                    u = (i + 0.5) / n * 2 - 1
-                    x = u * (0.021 if row == 0 else 0.018)
-                    y = m[1] + 0.008 + 0.024 * u * u + (0.002 if row else 0.0)
-                    w = 0.0024 if abs(u) < 0.45 else 0.0032
-                    hh = h * (1.0 if abs(u) < 0.45 else 0.8)
-                    dx = np.array([1.0, 0.048 * u * 2, 0.0])
-                    R = frame(dx, np.array([0, 1.0, 0]))
-                    zc = z0 - hh / 2 if row == 0 else z0 + hh / 2
-                    V, Fb = block(np.array([x, y, zc]), (w, 0.0028, hh / 2), R)
+        # teeth: tapered blocks along the arches, widest at the biting edge; the back ones are shorter and thicker
+        rows = ((arch_u, float(m[2]) + 0.0006, 1, (0.0084, 0.0066, 0.0074, 0.0068, 0.0068, 0.0092),
+                 (0.0115, 0.0105, 0.0125, 0.0105, 0.0095, 0.009)),
+                (arch_l, float(m[2]) - opn - 0.0006, -1, (0.0056, 0.0058, 0.0068, 0.0068, 0.0068, 0.0092),
+                 (0.0105, 0.0105, 0.0115, 0.0095, 0.0085, 0.008)))
+        n = L["teeth"]                                        # LODs merge n teeth into one block
+        for arch, zedge, up, widths, heights in rows:
+            widths = [sum(widths[i:i + n]) for i in range(0, 6, n)]
+            heights = heights[::n]
+            u = 0.0
+            for k, (w, h) in enumerate(zip(widths, heights)):
+                a = dental_arc(arch, u + w / 2)
+                u += w
+                px, py = dental_at(arch, a)
+                tan = dental_at(arch, a + 0.01) - np.array([px, py])
+                thick = 0.0028 + 0.0022 * k / (len(widths) - 1)
+                for s in (1, -1):
+                    R = frame(np.array([s * tan[0], tan[1], 0.0]), np.array([s * np.cos(a), np.sin(a), 0.0]))
+                    V, Fb = tooth(np.array([s * px, py, zedge]), (w / 2 - 0.0004, thick), h, up, R)
                     self.add(V, Fb, "head")
         # the light deep in the orbits
         sg, rg = self.L["glow"]
         for e in (el, er):
-            V, Fb = ball(e + np.array([0, 0.012, 0.0]), 0.0062, sg, rg)
+            V, Fb = ball(e + np.array([0, 0.014, -0.001]), 0.0055, sg, rg)
             self.add(V, Fb, "head", mat=1)
 
     # -------------------------------------------------------------- spine and ribs

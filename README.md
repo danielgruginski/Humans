@@ -608,10 +608,11 @@ rotting villagers, models + the Unity install).
   Skeletons: cut out (the bones show through), clipped in the depth and shadow passes too. Plate and bone never tear.
 - **Skeleton** (`hum_skeleton`): a garment "Skeleton" (slot `skeleton`, material `bone`, its own maker in
   `build_wardrobe`, Undead builds only) that hides every body region and the head. Measured off the build: skull,
-  mandible and pelvis sculpted as distance fields (openvdb) and decimated to budgets, teeth as blocks, 24 vertebrae, 9
+  mandible and pelvis sculpted as distance fields (openvdb) and decimated to budgets (skull and mandible one side then
+  mirrored, `decimate_mirrored`), teeth as tapered blocks along two arches, 24 vertebrae, 9
   rib pairs (the barrel's shape off the skin, upper ribs smaller at the sides) and a sternum, clavicles, shoulder
   blades, every long bone lofted, every phalanx on its own finger bone; all pieces rigid on one bone. A cold light in
-  each orbit (material slot 1, Humans/Glow, colour per character). 8.5k / 3.4k / 2.0k triangles (LOD0-2; a human's
+  each orbit (material slot 1, Humans/Glow, colour per character). 9.0k / 3.5k / 2.2k triangles (LOD0-2; a human's
   body + head is 27.8k / 7.4k / 3.2k), LODs rebuilt from the recipe at lower resolution. `Human_Cloth_Undead.fbx`.
 - **Presets** `Zombie` (gaunt face sliders, livid grey-green tones, bluish lips, milky irises, thin hair, rot 0.65-1,
   wound sets 70 % / 55 %, tatter 0.35-0.75 painted; the rolled villager's beard and clothes stay) and `Skeleton`

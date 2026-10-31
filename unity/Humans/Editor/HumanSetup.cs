@@ -124,6 +124,7 @@ namespace Humans.EditorTools
             {
                 var path = AssetDatabase.GUIDToAssetPath(guid);
                 if (!(AssetImporter.GetAtPath(path) is TextureImporter ti)) continue;
+                if (path.Contains("/HairEdge/")) continue;       // their own settings (HumanHairCardsSpike), and "Strands" below isn't them
                 bool pattern = path.Contains("T_Cloth_") || path.Contains("T_Plate_Steel");
                 bool mask = path.Contains("T_Plate_Ornament");  // a tiling height/coverage mask: data, not colour
                 bool tatter = path.Contains("T_Cloth_Tatter");  // the undead's torn clothes: a hole field, data
