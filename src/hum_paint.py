@@ -5,7 +5,7 @@ T_Head_MaskA  R blush zones (cheeks, nose, ears, knuckle-warm spots)
               B shading (AO, cavities, painted top light), stored /SHADE_MAX so 1.0 = SHADE_MAX
               A lash line + lid crease (dark)
 T_Head_MaskB  R stubble / beard shadow
-              G age lines (forehead, crow's feet, nasolabial, under-eye)
+              G age lines (forehead, nasolabial, under-eye), age spots (hum_skin)
               B freckles
               A brows (painted; geometry brows may cover them later)
 T_Eye         front-projected eyeball, iris as a radial mask (iris colour is a shader parameter)
@@ -22,6 +22,7 @@ from mathutils import Vector, noise
 from mathutils.bvhtree import BVHTree
 
 import hum_head
+import hum_skin
 
 ROOT = r"E:\Unity\Projects\GameArtGeneration\Humans"
 TEX_DIR = os.path.join(ROOT, "export", "Textures")
@@ -439,15 +440,6 @@ def paint_masks(ob, size=SIZE):
         * smoothstep(fh_z0 - 0.004, fh_z0 + 0.004, z) * smoothstep(fh_z0 + 0.04, fh_z0 + 0.025, z) \
         * smoothstep(0.055, 0.03, ax) * smoothstep(-0.1, -0.6, N[..., 1])
 
-    def crow(c, r):
-        o = c + np.array([np.sign(c[0]) * r * 1.35, 0.004, -0.001])
-        d = P - o
-        ang = np.arctan2(d[..., 2], np.abs(d[..., 0]))
-        dist = np.linalg.norm(d, axis=-1)
-        rays = (0.5 + 0.5 * np.cos(ang * 9)) ** 8
-        return rays * smoothstep(0.003, 0.007, dist) * smoothstep(0.02, 0.012, dist) * (np.abs(x) > abs(c[0]))
-    crows = per_eye(crow)
-
     def naso(c, r):
         # line from beside the nose wing to beside the mouth corner
         a = np.array([np.sign(c[0]) * 0.017, F.nose_tip[1] + 0.022, F.nose_tip[2] - 0.004])
@@ -459,7 +451,9 @@ def paint_masks(ob, size=SIZE):
     nasom = per_eye(naso)
     under_eye = per_eye(lambda c, r: gauss(((np.linalg.norm(P - c, axis=-1) / r - 1.45) ** 2), 0.12)
                         * smoothstep(-0.2, -0.6, (z - c[2]) / r) * smoothstep(-0.2, -0.6, (y - c[1]) / r))
-    age = np.clip(0.8 * fore + 0.7 * crows + 0.8 * nasom + 0.18 * under_eye, 0, 1)
+    # no crow's feet (2026-10-31, Daniel: they looked bad, straight rays from a point beside the eye)
+    age = np.clip(0.8 * fore + 0.8 * nasom + 0.18 * under_eye, 0, 1)
+    age = np.maximum(age, 0.8 * hum_skin.age_spots(P, valid, hum_skin.landmarks(F)))
 
     # --- freckles: sparse spots over nose and cheeks
     zone = np.clip(per_eye(cheek) * 1.5 + gauss(((P - F.nose_tip - [0, 0.01, 0.012]) ** 2).sum(-1), 0.016), 0, 1)
@@ -518,6 +512,7 @@ def bake_head_masks(ob, size=SIZE):
     B = dilate(B, valid)
     ia = save_image("T_Head_MaskA", A, os.path.join(TEX_DIR, "T_Head_MaskA.png"))
     ib = save_image("T_Head_MaskB", B, os.path.join(TEX_DIR, "T_Head_MaskB.png"))
+    hum_skin.bake_detail(ob, size)
     return ia, ib
 
 

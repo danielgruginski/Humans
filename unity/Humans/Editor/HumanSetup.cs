@@ -319,6 +319,7 @@ namespace Humans.EditorTools
             mats.skin.SetTexture("_MaskA", Tex("T_Head_MaskA"));
             mats.skin.SetTexture("_MaskB", Tex("T_Head_MaskB"));
             mats.skin.SetTexture("_MaskC", Tex("T_Head_MaskC"));
+            mats.skin.SetTexture("_MaskD", Tex("T_Head_MaskD"));
             mats.skin.SetTexture("_RotMask", Tex("T_Head_Rot"));                // the undead's rot (rot 0: unused)
             mats.eye.SetTexture("_EyeMask", Tex("T_Eye_Mask"));
             mats.eye.SetFloat("_Smoothness", 0.72f);

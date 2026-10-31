@@ -7,7 +7,7 @@ Skin (linear colours, masks from hum_paint):
     c = lerp(c, c * FRECKLE_TINT, B.b * freckles)
     c = lerp(c, lerp(c, hair, 0.6) * 0.75, B.r * stubble)
     c = lerp(c, lip, A.g * 0.8)
-    c = c * (1 - B.g * age * 0.25)
+    c = c * (1 - B.g * age * 0.25)      (grain just before this, the three tints first: MaskD, hum_skin)
     c = lerp(c, hair * 0.8, B.a * brows)
     c = lerp(c, lash, A.a)
     c = c * A.b * SHADE_MAX
@@ -21,6 +21,11 @@ import hum_paint
 
 BLUSH_TINT = (1.0, 0.55, 0.50, 1)
 FRECKLE_TINT = (0.70, 0.48, 0.36, 1)
+# MaskD (hum_skin): c = tone * lerp(1, WARM, D.r) * lerp(1, COOL, D.g) * lerp(1, GOLD, D.b); c *= 1 + (D.a - 0.5) * 2 * GRAIN
+WARM_TINT = (1.0, 0.80, 0.76, 1)
+COOL_TINT = (0.90, 0.92, 1.0, 1)
+GOLD_TINT = (1.03, 0.97, 0.80, 1)
+GRAIN = 0.5
 
 # object property -> default (linear RGB or scalar)
 SKIN_PROPS = {
@@ -131,8 +136,9 @@ def _rot(T, c, rot_tex):
     return c
 
 
-def skin_material(mask_a, mask_b, mask_c=None, name="M_HumanSkin", rot=None):
+def skin_material(mask_a, mask_b, mask_c=None, name="M_HumanSkin", rot=None, mask_d=None):
     rot = rot or bpy.data.images.get("T_Head_Rot")
+    mask_d = mask_d or bpy.data.images.get("T_Head_MaskD")
     mat = bpy.data.materials.get(name) or bpy.data.materials.new(name)
     mat.use_nodes = True
     T = _NT(mat)
@@ -143,11 +149,18 @@ def skin_material(mask_a, mask_b, mask_c=None, name="M_HumanSkin", rot=None):
     age, brows, scalp = T.split(T.attr("hum_amt2"))
     bsh, _, _ = T.split(T.attr("hum_amt3"))
     c = tone
+    if mask_d is not None:
+        (dr, dg, db), da = T.tex(mask_d)
+        c = T.mix(c, T.mul(c, WARM_TINT), dr)
+        c = T.mix(c, T.mul(c, COOL_TINT), dg)
+        c = T.mix(c, T.mul(c, GOLD_TINT), db)
     c = T.mix(c, T.mul(c, BLUSH_TINT), T.math('MULTIPLY', ar, blush))
     c = T.mix(c, T.mul(c, FRECKLE_TINT), T.math('MULTIPLY', bb, frk))
     stub_col = T.mul(T.mix(c, hair, 0.6), (0.75, 0.75, 0.75, 1))
     c = T.mix(c, stub_col, T.math('MULTIPLY', br, stub))
     c = T.mix(c, lip, T.math('MULTIPLY', ag, 0.8))
+    if mask_d is not None:
+        c = T.mul(c, T.math('ADD', 1.0, T.math('MULTIPLY', T.math('SUBTRACT', da, 0.5), 2 * GRAIN)))
     agef = T.math('SUBTRACT', 1.0, T.math('MULTIPLY', T.math('MULTIPLY', bg, age), 0.25))
     c = T.mix(c, (0, 0, 0, 1), T.math('SUBTRACT', 1.0, agef))
     c = T.mix(c, T.mul(hair, (0.8, 0.8, 0.8, 1)), T.math('MULTIPLY', ba, brows))

@@ -11,6 +11,7 @@ Shader "Humans/Skin"
         [NoScaleOffset] _HairEdge ("Hair style's tint past its edge", 2D) = "black" {}
         [NoScaleOffset] _BeardEdge ("Beard style's tint past its edge", 2D) = "black" {}
         [NoScaleOffset] _BrowEdge ("Brow style's soft base", 2D) = "black" {}
+        [NoScaleOffset] _MaskD ("Mask D (warm, cool, gold, grain: hum_skin)", 2D) = "black" {}
         [NoScaleOffset] _RotMask ("Rot (blotches, wounds A, wounds B, hollows)", 2D) = "black" {}
         _Tone ("Skin tone", Color) = (0.81, 0.59, 0.44, 1)
         _Lip ("Lip", Color) = (0.74, 0.47, 0.40, 1)
@@ -59,6 +60,7 @@ Shader "Humans/Skin"
             TEXTURE2D(_MaskA); SAMPLER(sampler_MaskA);
             TEXTURE2D(_MaskB); SAMPLER(sampler_MaskB);
             TEXTURE2D(_MaskC); SAMPLER(sampler_MaskC);
+            TEXTURE2D(_MaskD);
             TEXTURE2D(_HairEdge);
             TEXTURE2D(_BeardEdge);
             TEXTURE2D(_BrowEdge);
@@ -72,6 +74,10 @@ Shader "Humans/Skin"
             static const half SHADE_MAX = 1.25;
             static const half3 BLUSH_TINT = half3(1.0, 0.55, 0.50);
             static const half3 FRECKLE_TINT = half3(0.70, 0.48, 0.36);
+            static const half3 WARM_TINT = half3(1.0, 0.80, 0.76);
+            static const half3 COOL_TINT = half3(0.90, 0.92, 1.0);
+            static const half3 GOLD_TINT = half3(1.03, 0.97, 0.80);
+            static const half GRAIN = 0.5;
 
             half4 frag(HVaryings i) : SV_Target
             {
@@ -79,12 +85,14 @@ Shader "Humans/Skin"
                 half4 a = SAMPLE_TEXTURE2D(_MaskA, sampler_MaskA, i.uv.xy);
                 half4 b = SAMPLE_TEXTURE2D(_MaskB, sampler_MaskB, i.uv.xy);
                 half4 c = SAMPLE_TEXTURE2D(_MaskC, sampler_MaskC, i.uv.xy);
+                half4 d = SAMPLE_TEXTURE2D(_MaskD, sampler_MaskC, i.uv.xy);
                 half3 hair = _Hair.rgb;
-                half3 col = _Tone.rgb;
+                half3 col = _Tone.rgb * lerp(1, WARM_TINT, d.r) * lerp(1, COOL_TINT, d.g) * lerp(1, GOLD_TINT, d.b);
                 col = lerp(col, col * BLUSH_TINT, a.r * _Blush);
                 col = lerp(col, col * FRECKLE_TINT, b.b * _Freckles);
                 col = lerp(col, lerp(col, hair, 0.6) * 0.75, b.r * _Stubble);
                 col = lerp(col, _Lip.rgb, a.g * 0.8);
+                col *= 1 + (d.a - 0.5) * 2 * GRAIN;
                 col *= 1 - b.g * _Age * 0.25;
                 col = lerp(col, hair * 0.8, b.a * _Brows);
                 col = lerp(col, _Lash.rgb, a.a);
