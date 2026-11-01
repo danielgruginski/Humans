@@ -133,12 +133,80 @@ def _hood_ring(cy, z, th):
     return _support_rings(H, 0.0, cy, np.array([z]), th, band=0.012)[0]
 
 
+def _hood_hem_front(cy):
+    """Height of the CloakHood's hem at the throat on this build (None if it isn't built)."""
+    import bpy
+    import hum_builds
+    import hum_rig
+    hood = bpy.data.objects.get(C.cloth_name("CloakHood"))
+    if hood is None:
+        return None
+    H = hum_builds.build_coords(hood, hum_rig.SK)
+    front = H[(np.abs(H[:, 0]) < 0.03) & (H[:, 1] < cy)]
+    return float(front[:, 2].min()) if len(front) else None
+
+
+def _collar_clear(R, Zg, TH, P, cy, front, z_sh, ease=0.008):
+    """The collar and shoulder rows moved out only where something really lies under them: the furthest point of P at
+    each vertex's own height and direction. (The convex support takes in the shoulders, which stands a lowered collar
+    20-30 cm off an orc's neck; left as it was, the orc's traps and shirt came through.) The rows the hood covers stay
+    tucked under it, but for the front, which falls below its hem. Where the cape runs nearly flat over the traps, moving
+    out doesn't help: those rows rise over what is under them. Both kept symmetric (an orc's baldric is one-sided).
+    Returns (R, Zg)."""
+    R = np.array(R)
+    rp = np.hypot(P[:, 0], P[:, 1] - cy)
+    ap = np.arctan2(P[:, 0], -(P[:, 1] - cy)) % (2 * math.pi)
+    rows = np.flatnonzero(Zg.mean(1) > z_sh - 0.06)
+    floor = np.zeros_like(R)
+    for k in rows:
+        for j in range(R.shape[1]):
+            if k < 2 and front[k, j] < 0.5:
+                continue
+            da = np.abs((ap - TH[k, j] + math.pi) % (2 * math.pi) - math.pi)
+            m = (da < 0.1) & (np.abs(P[:, 2] - Zg[k, j]) < 0.015)
+            if m.any():
+                floor[k, j] = rp[m].max() + ease
+        f = np.maximum(floor[k], floor[k][::-1])
+        for _ in range(2):                                              # no spikes: the neighbours' reach, then soften
+            f[1:-1] = np.maximum(f[1:-1], np.maximum(f[:-2], f[2:]))
+        for _ in range(2):
+            f[1:-1] = 0.5 * f[1:-1] + 0.25 * (f[:-2] + f[2:])
+        R[k] = np.maximum(R[k], f)
+    Zg = np.array(Zg)
+    lift = np.zeros_like(Zg)
+    for j in range(R.shape[1]):
+        for k in rows[1:-1]:
+            if math.cos(TH[k, j]) > 0.2:                                # the sides and back: the traps
+                continue
+            da = np.abs((ap - TH[k, j] + math.pi) % (2 * math.pi) - math.pi)
+            r0, r1 = R[k, j], R[k + 1, j]
+            if r1 < r0 + 0.005:
+                continue
+            q = (da < 0.1) & (rp > r0) & (rp < min(r1, 0.2))
+            if q.any():
+                zc = Zg[k, j] + (Zg[k + 1, j] - Zg[k, j]) * (rp[q] - r0) / (r1 - r0)
+                d = min(float((P[q, 2] + ease - zc).max()), 0.03)
+                if d > 0:
+                    lift[k, j] = max(lift[k, j], d)
+                    lift[k + 1, j] = max(lift[k + 1, j], d)
+    for k in rows:
+        f = np.maximum(lift[k], lift[k][::-1])
+        for _ in range(2):
+            f[1:-1] = np.maximum(f[1:-1], np.maximum(f[:-2], f[2:]))
+        for _ in range(2):
+            f[1:-1] = 0.5 * f[1:-1] + 0.25 * (f[:-2] + f[2:])
+        Zg[k] += f
+    for k in range(len(rows) - 2, -1, -1):                              # the rows stay in order going up
+        Zg[rows[k]] = np.maximum(Zg[rows[k]], Zg[rows[k + 1]] + 0.002)
+    return R, Zg
+
+
 def _cloak_radii(P, Z, TH, cy, z_neck, z_sh, t):
     """R[k, j]: the cape's rings around the points P, with its ease, flare and folds. Rings above the body
     mesh's neck (the head is its own object: the taller builds' collar) take the first ring below that has
     points."""
     R = np.zeros_like(TH)
-    band = np.where(np.arange(len(Z)) >= 4, 0.035, 0.02)
+    band = np.where(np.arange(len(Z)) >= 6, 0.035, 0.02)
     have = np.array([(np.abs(P[:, 2] - Z[k]) < band[k]).sum() >= 5 for k in range(len(Z))])
     first = int(np.argmax(have))
     for k in range(len(Z)):
@@ -146,7 +214,7 @@ def _cloak_radii(P, Z, TH, cy, z_neck, z_sh, t):
         R[k] = _support_rings(P, 0.0, cy, Z[kk:kk + 1], TH[k], band=band[kk])[0]
     for _ in range(4):
         R[:, 1:-1] = 0.5 * R[:, 1:-1] + 0.25 * (R[:, :-2] + R[:, 2:])
-    for k in range(5, len(Z)):                                            # never narrower going down
+    for k in range(7, len(Z)):                                            # never narrower going down
         R[k] = np.maximum(R[k], R[k - 1])
     for _ in range(2):
         R[1:-1] = 0.5 * R[1:-1] + 0.25 * (R[:-2] + R[2:])
@@ -193,7 +261,7 @@ def _cloak(B, long=False, collar=None, hem=None, leaves=None):
     body = co[np.isin(B.part, ["torso", "neck", "leg_l", "leg_r"])]
     P = np.vstack([body, np.array(arm_pts), _worn_under(B, shoulder)])
     # rings: collar, over the shoulders, then straight down
-    Z = np.r_[np.linspace(z_neck + 0.05, z_sh + 0.05, 4), np.linspace(z_sh + 0.01, z_sh - 0.12, 5),
+    Z = np.r_[np.linspace(z_neck + 0.05, z_sh + 0.05, 6), np.linspace(z_sh + 0.01, z_sh - 0.12, 5),
               np.linspace(z_sh - 0.15, z_hem, 18 if long else 14)]
     t = np.clip((z_sh + 0.05 - Z) / (z_sh - z_hem), 0, 1)             # 0 at the shoulders .. 1 at the hem
     segs = 48
@@ -241,6 +309,17 @@ def _cloak(B, long=False, collar=None, hem=None, leaves=None):
         L = Zs[k0] - Zs[-1]
         lift = leaves[1] - hum_elven.leaf_edge(np.arange(n) / (n - 1) * leaves[0], leaves[1])
         Zg[k0:] = Zs[k0] + (Zs[k0:, None] - Zs[k0]) * (L - lift[None, :]) / L
+    if collar is None:
+        # the collar falls in front to just under the hood's hem, a neckline that is high at the back only. Level all
+        # round at neck + 5 cm, it and the clasp stood at the chin or over it (2 cm over on the orcs, 3 on the dwarves)
+        hem = _hood_hem_front(cy)
+        if hem is not None and Zs[0] > hem + 0.01:
+            d = Zs[0] - (hem + 0.01)
+            z_base = z_sh + 0.01
+            w = np.clip((Zs - z_base) / (Zs[0] - z_base), 0.0, 1.0)
+            cf = ss(0.5, 0.95, np.cos(THs))                               # a notch at the throat, the sides stay up
+            Zg = Zg - d * w[:, None] * cf
+            Rs, Zg = _collar_clear(Rs, Zg, THs, P, cy, cf, z_sh)
     V = np.array([(Rs[k, j] * math.sin(THs[k, j]), cy - Rs[k, j] * math.cos(THs[k, j]), Zg[k, j])
                   for k in range(len(Zs)) for j in range(n)])
     F = [((k + 1) * n + j, (k + 1) * n + j + 1, k * n + j + 1, k * n + j) for k in range(len(Zs) - 1) for j in range(n - 1)]
@@ -250,7 +329,7 @@ def _cloak(B, long=False, collar=None, hem=None, leaves=None):
     V, F = C.add_rim(V, F, 0.005, B)
     U = np.vstack([U, np.zeros((len(V) - len(U), 2))])
     # the clasp: two iron studs where the collar meets at the throat
-    O = [np.array([0.0, cy, Z[k_clasp]])] * 2
+    O = [np.array([0.0, cy, Zg[k_clasp + 1, 0]])] * 2
     D = [np.array([math.sin(math.pi + s * CLOAK_SPAN_TOP * 0.97), -math.cos(math.pi + s * CLOAK_SPAN_TOP * 0.97), 0])
          for s in (-1, 1)]
     Pc, Nc = A.cast(V, F, O, D)
@@ -483,15 +562,18 @@ def hood_profile(Hs):
     closed; between the hairline and the chin the face is open (not the ears)."""
     F_ = Hs.H.F
     z_top = float(Hs.co[:, 2].max())
-    z_open = float(Hs.eye_z) + 0.078                                  # at the hairline: the fringe shows
+    # the opening's top under the hairline, wide and round: reaching 11 cm over the eyes (near the top of the skull) and
+    # only 62 deg wide, it showed the middle of the face in a tall pointed slot and every face looked long (2026-11-01)
+    z_open = float(Hs.eye_z) + 0.045
     z_chin = float(F_.chin[2])
     z_bot = float(Hs.co[:, 2].min()) - 0.02                         # the hem tucks inside the cloak's collar
-    face = math.radians(62)
+    face = math.radians(68)
 
     def open_half(z):
         z = np.asarray(z, float)
-        top = ss(z_open + 0.03, z_open - 0.025, z) ** 0.6            # an arched top edge (no square corners)
-        bottom = ss(z_chin - 0.03, z_chin - 0.005, z)                # 1 above the throat
+        u = np.clip((z_open + 0.03 - z) / 0.075, 0.0, 1.0)           # the arch: 0 at its top .. 1 at the eyes
+        top = (1.0 - (1.0 - u) ** 2.5) ** 0.4                        # flat over the brow, round at the temples
+        bottom = ss(z_chin - 0.03, z_chin + 0.035, z) ** 0.6         # closes round the jaw (no square corners)
         return face * top * bottom
     return z_top, z_open, z_chin, z_bot, open_half
 
@@ -524,7 +606,10 @@ def _cloak_hood(Hs, peak=True, off=0.02, drop=0.0, flare=0.006, over=()):
     z_dome = z_open + 0.035                                           # above: the crown hull (closed rings)
     crown = _hood_crown(Hs, z_open, off=off, peak=peak)
     z_hi = float(crown[0][:, 2].max())
-    Z = np.r_[z_dome + (z_hi - 0.002 - z_dome) * np.linspace(1.0, 0.0, 16)[:-1],
+    # with the seam, the rows just under its top are long slivers along it, which showed as a slit in the crown: they
+    # stop 12 mm lower and a small fan closes them
+    z_cap = z_hi - (0.012 if peak else 0.002)
+    Z = np.r_[z_dome + (z_cap - z_dome) * np.linspace(1.0, 0.0, 16)[:-1],
               np.linspace(z_dome, z_chin - 0.035, 18)[:-1], np.linspace(z_chin - 0.035, z_bot, 5)]
     segs = 44
     u = np.linspace(-1, 1, segs + 1)
@@ -556,6 +641,8 @@ def _cloak_hood(Hs, peak=True, off=0.02, drop=0.0, flare=0.006, over=()):
         ctr = np.array([Hs.cx, Hs.cy]) if open_half(Z[k]) > 0.01 else sec.mean(0)
         CX[k], cy[k] = ctr
         R[k] = [_ray_hull(sec, ctr, np.array([math.sin(a), -math.cos(a)])) for a in TH[k]]
+        if closed[k]:                                                 # both ends of the ring are one point: a ray along
+            R[k, 0] = R[k, -1] = max(R[k, 0], R[k, -1])               # a hull corner can miss, which left a slit
         # low on the head (nape, jaw) the neck and what's worn under (a gambeson's collar rises up the nape)
         # must stay inside too
         if Z[k] < float(Hs.co[:, 2].min()) + 0.08:
@@ -589,6 +676,9 @@ def _cloak_hood(Hs, peak=True, off=0.02, drop=0.0, flare=0.006, over=()):
         R[rows, 0] = R[rows, -1] = 0.5 * (R[rows, 0] + R[rows, -1])
         if len(rows) > 2:
             R[rows[1:-1]] = 0.5 * R[rows[1:-1]] + 0.25 * (R[rows[:-2]] + R[rows[2:]])
+    if peak:                                           # a short collar: on an orc's shoulders it spread out in points
+        for k in rows:
+            R[k] = np.minimum(R[k], R[rows[0] - 1] + 0.05)
     # the capelet's outline: an oval through its widest points (front, back, sides), grown just enough to
     # contain the shoulders - not their squared outline. Blends in from the neck down to the hem.
     for k in rows:
@@ -606,10 +696,15 @@ def _cloak_hood(Hs, peak=True, off=0.02, drop=0.0, flare=0.006, over=()):
          for k in range(len(Z)) for j in range(n)]
     tip = len(V)
     top = crown[0][int(np.argmax(crown[0][:, 2]))]
+    if peak:
+        sec = _hull_section(crown, Z[0])
+        top = np.r_[sec.mean(0), z_cap + 0.006]
     V.append(tuple(top))                                              # the top of the seam
     V = np.array(V)
+    for k in np.flatnonzero(closed):                                  # exactly one point: 1e-16 apart they can round to
+        V[k * n + n - 1] = V[k * n]                                   # two different weld cells, which left a slit
     F = [((k + 1) * n + j, (k + 1) * n + j + 1, k * n + j + 1, k * n + j) for k in range(len(Z) - 1) for j in range(n - 1)]
-    F += [(j + 1, j, tip) for j in range(n - 1)]
+    F += [(j, j + 1, tip) for j in range(n - 1)]                       # (wound against the rows it was a hole in the crown)
     fade = np.r_[np.repeat(f, n), 0.0]
     V, F, fade = _weld(V, F, fade)                                      # closed rings: no seam line
     F = A._outward(V, F, np.array([Hs.cx, Hs.cy, float(np.mean(Z))]))
