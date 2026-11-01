@@ -33,13 +33,16 @@ _BASE = {
 }
 _SHAPE = {
     ("M", "Slim"): dict(Thin=0.4, Slight=0.25),
-    ("F", "Slim"): dict(Thin=0.4, Slight=0.25, NeckWidth_Neg=0.2),
+    # 2026-11-01 (Daniel: "make it curvier", then "larger breasts ... nothing major"): the three builds humans roll
+    # take hum_curves' key and a fuller bust; the races' female builds keep their own bodies
+    ("F", "Slim"): dict(Thin=0.4, Slight=0.25, NeckWidth_Neg=0.2, Curves_Pos=1.0, Bust_Pos=0.42),
     ("M", "Strong"): dict(Muscular=0.8, ArmMuscle_Pos=0.6, ShoulderMuscle_Pos=0.6, LegMuscle_Pos=0.5,
                           ChestMuscle_Pos=0.5, BackMuscle_Pos=0.5, VShape_Pos=0.5, NeckWidth_Pos=0.3),
     ("F", "Strong"): dict(Muscular=0.7, ArmMuscle_Pos=0.5, ShoulderMuscle_Pos=0.45, LegMuscle_Pos=0.45,
-                          ChestMuscle_Pos=0.25, BackMuscle_Pos=0.4, VShape_Pos=0.25, NeckWidth_Pos=0.1),
+                          ChestMuscle_Pos=0.25, BackMuscle_Pos=0.4, VShape_Pos=0.25, NeckWidth_Pos=0.1, Curves_Pos=0.85,
+                          Bust_Pos=0.42),
     ("M", "Heavy"): dict(Heavy=0.8, Belly_Pos=0.5, NeckWidth_Pos=0.35),
-    ("F", "Heavy"): dict(Heavy=0.75, Belly_Pos=0.35, Hips_Pos=0.4, Waist_Neg=0.0),
+    ("F", "Heavy"): dict(Heavy=0.75, Belly_Pos=0.35, Hips_Pos=0.4, Waist_Neg=0.0, Curves_Pos=0.85, Bust_Pos=0.42),
     # 2026-10-10: the orcs' own builds (hum_orcs; never rolled for a human, BUILD_ODDS 0): the Strong build
     # pushed further, with what only they have - a thick neck carried forward, big upper arms, swollen
     # forearms, big hands, a deep chest and shorter legs

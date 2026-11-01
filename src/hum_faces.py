@@ -108,16 +108,18 @@ SLIDERS = [
     ("Lipless", "@lipless", None),                     # the lips shrunk back onto the teeth (face)
     # 2026-10-23, the imp (its own Imp build; Daniel: "Do the number 4"): legs much shorter than LegLength's
     ("ShortLegs", "@short_legs", None),
+    # 2026-11-01, the curvier female builds (hum_curves): the outline drawn by height, and a rounder bust
+    ("Curves", "@curves", None),
 ]
 BODY_SLIDERS = ["ArmMuscle", "ShoulderMuscle", "LegMuscle", "ChestMuscle", "BackMuscle", "VShape",
                 "ShoulderWidth", "Waist", "Hips", "Bust", "Belly",
                 "NeckThick", "NeckForward", "UpperArmSize", "ForearmSize", "HandSize", "TorsoDepth", "LegLength",
                 "NeckLength", "ChestWide", "Traps", "ArmsOut", "ArmBulk", "Hunch", "Ribs", "Sunken", "Bony",
-                "Claws", "LongArms", "Arch", "ShortLegs"]
+                "Claws", "LongArms", "Arch", "ShortLegs", "Curves"]
 PRESET_ONLY = {"JawWide", "BrowHeavy", "Underbite", "EarLow", "NeckThick", "NeckForward", "UpperArmSize",
                "ForearmSize", "HandSize", "TorsoDepth", "LegLength", "NeckLength", "ChestWide", "Traps", "ArmsOut",
                "ArmBulk", "Hunch", "Ribs", "Sunken", "Bony", "EyeSunken", "Gaunt", "Claws", "LongArms", "Arch",
-               "Lipless", "ShortLegs"}
+               "Lipless", "ShortLegs", "Curves"}
 MUSCLE_SLIDERS = ["ArmMuscle", "ShoulderMuscle", "LegMuscle", "ChestMuscle", "BackMuscle", "VShape"]
 
 # macro keys: name -> (macros, race)
@@ -347,9 +349,11 @@ def _bound(st, rig, sk):
     if "deform" not in st:
         return st
     st = dict(st)
-    if st["deform"] not in DEFORMS:                    # the undead's shapes live in hum_undead
+    if st["deform"] not in DEFORMS:                    # the undead's shapes live in hum_undead, Curves in hum_curves
+        import hum_curves
         import hum_undead
         DEFORMS.update(hum_undead.DEFORMS)
+        DEFORMS.update(hum_curves.DEFORMS)
     fn = DEFORMS[st.pop("deform")]
     st["deform"] = lambda C: fn(C, rig, sk)
     return st
